@@ -1,3 +1,4 @@
+use crate::scf::no_wrap::*;
 use crate::{
     scf::{
         Parent, Print, SharedFromSelf,
@@ -71,21 +72,25 @@ impl Operation {
         new_op
     }
 
+    pub fn set_id(&mut self, id: u64) {
+        self.id = id;
+    }
+
     pub fn get_id(&self) -> u64 {
         self.id
     }
 
-    fn add_use(&mut self, new_use: Shared<Self>) {
+    pub fn add_use(&mut self, new_use: Shared<Self>) {
         self.uses.push(Rc::downgrade(&new_use));
     }
 
-    pub fn add_operands(&mut self, new_operand: Value) -> &mut Self {
+    pub fn add_operand(&mut self, new_operand: Value) -> &mut Self {
         self.operands.push(new_operand.clone());
         new_operand.def.borrow_mut().add_use(self.share_from_self());
         self
     }
 
-    pub fn add_operands_shared(&mut self, new_operand: Shared<Value>) -> &mut Self {
+    pub fn add_operand_shared(&mut self, new_operand: Shared<Value>) -> &mut Self {
         self.operands.push(new_operand.borrow().clone());
         new_operand
             .borrow_mut()
@@ -110,7 +115,7 @@ impl Operation {
         self.operands[seq].clone()
     }
 
-    pub fn add_region(&mut self, new_region: Shared<Region>) {
+    pub fn add_region(&mut self, new_region: Shared<Region>) -> &mut Self {
         let exists = self
             .regions
             .iter()
@@ -119,10 +124,15 @@ impl Operation {
         if !exists {
             self.regions.push(new_region);
         }
+        self
     }
 
     pub fn get_default_region(&self) -> Shared<Region> {
         Rc::clone(self.regions.get(0).unwrap())
+    }
+
+    pub fn get_region(&self, seq: usize) -> Shared<Region> {
+        Rc::clone(&self.regions.get(seq).unwrap())
     }
 
     pub fn set_attr(&mut self, seq: usize, attr: Attr) -> &mut Self {
@@ -199,7 +209,7 @@ impl Print for Operation {
                 .join(""),
             self.regions
                 .iter()
-                .map(|region| region.borrow().print(indent + 1))
+                .map(|region| region.print(indent + 1))
                 .collect::<Vec<_>>()
                 .join("")
         )
@@ -274,75 +284,17 @@ pub enum OpType {
 }
 
 #[macro_export]
-macro_rules! op_ptr_defref {
-    ($op : expr) => {{
-        let optype = $op.borrow_mut().get_optype();
-        match optype {
-            OpType::Store => $op.borrow().get_operand(2).get_type().deref(),
-            OpType::Load => $op.borrow().get_operand(1).get_type().deref(),
-            OpType::Int2Ptr => $op.borrow().get_type().deref(),
-            OpType::Ptr2Int => $op.borrow().get_operand(1).get_type().deref(),
-            OpType::DeclGlobal => $op.borrow().get_type().deref(),
-            OpType::Alloca => $op.borrow().get_type().deref(),
-            OpType::GetArg => $op.borrow().get_type().deref(),
-            _ => panic!("op_ptr_defref!: get unexpected op {}", optype.to_string()),
-        }
-    }};
+macro_rules! optype_checkif {
+    ($operation : expr, $optype : expr) => {
+        $operation.get_optype() == $optype
+    };
 }
 
 #[macro_export]
-macro_rules! value_ptr_defref {
-    ($op : expr) => {{
-        let optype = $op.def.borrow_mut().get_optype();
-        match optype {
-            OpType::Store => $op.def.borrow().get_operand(2).get_type().deref(),
-            OpType::Load => $op.def.borrow().get_operand(1).get_type().deref(),
-            OpType::Int2Ptr => $op.get_type().deref(),
-            OpType::Ptr2Int => $op.def.borrow().get_operand(1).get_type().deref(),
-            OpType::DeclGlobal => $op.get_type().deref(),
-            OpType::Alloca => $op.get_type().deref(),
-            OpType::GetArg => $op.get_type().deref(),
-            _ => panic!(
-                "value_ptr_defref!: get unexpected op {}",
-                optype.to_string()
-            ),
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! value_type {
-    ($op : expr) => {{
-        let optype = $op.def.borrow_mut().get_optype();
-        match optype {
-            OpType::ICmp
-            | OpType::FCmp
-            | OpType::Neg
-            | OpType::FNeg
-            | OpType::Add
-            | OpType::LAdd
-            | OpType::FAdd
-            | OpType::Sub
-            | OpType::LSub
-            | OpType::FSub
-            | OpType::Mul
-            | OpType::LMul
-            | OpType::FMul
-            | OpType::Div
-            | OpType::LDiv
-            | OpType::FDiv
-            | OpType::Mod
-            | OpType::LMod
-            | OpType::FMod
-            | OpType::Load
-            | OpType::FuncCall
-            | OpType::GetI
-            | OpType::GetL
-            | OpType::GetF
-            | OpType::GetArg => $op.get_type(),
-            _ => panic!("value_type!: get unexpected op {}", optype.to_string()),
-        }
-    }};
+macro_rules! optype_assert {
+    ($operation : expr, $optype : expr) => {
+        assert_eq!($operation.get_optype(), $optype)
+    };
 }
 
 impl fmt::Display for OpType {
@@ -404,4 +356,97 @@ impl fmt::Display for OpType {
             Self::GetArg => write!(f, "getarg"),
         }
     }
+}
+
+#[macro_export]
+macro_rules! op_ptr_defref {
+    ($op : expr) => {{
+        let optype = $op.get_optype();
+        match optype {
+            OpType::Store => $op.get_operand(2).get_type().deref(),
+            OpType::Load => $op.get_operand(1).get_type().deref(),
+            OpType::Int2Ptr => $op.get_type().deref(),
+            OpType::Ptr2Int => $op.get_operand(1).get_type().deref(),
+            OpType::DeclGlobal => $op.get_type().deref(),
+            OpType::Alloca => $op.get_type().deref(),
+            OpType::GetArg => $op.get_type().deref(),
+            _ => panic!("op_ptr_defref!: get unexpected op {}", optype.to_string()),
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! value_ptr_defref {
+    ($op : expr) => {{
+        let optype = $op.def.get_optype();
+        match optype {
+            OpType::Store => $op.def.get_operand(2).get_type().deref(),
+            OpType::Load => $op.def.get_operand(1).get_type().deref(),
+            OpType::Int2Ptr => $op.get_type().deref(),
+            OpType::Ptr2Int => $op.def.get_operand(1).get_type().deref(),
+            OpType::DeclGlobal => $op.get_type().deref(),
+            OpType::Alloca => $op.get_type().deref(),
+            OpType::GetArg => $op.get_type().deref(),
+            _ => panic!(
+                "value_ptr_defref!: get unexpected op {}",
+                optype.to_string()
+            ),
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! value_type {
+    ($op : expr) => {{
+        let optype = $op.def.get_optype();
+        match optype {
+            OpType::ICmp
+            | OpType::FCmp
+            | OpType::Neg
+            | OpType::FNeg
+            | OpType::Add
+            | OpType::LAdd
+            | OpType::FAdd
+            | OpType::Sub
+            | OpType::LSub
+            | OpType::FSub
+            | OpType::Mul
+            | OpType::LMul
+            | OpType::FMul
+            | OpType::Div
+            | OpType::LDiv
+            | OpType::FDiv
+            | OpType::Mod
+            | OpType::LMod
+            | OpType::FMod
+            | OpType::Load
+            | OpType::FuncCall
+            | OpType::GetI
+            | OpType::GetL
+            | OpType::GetF
+            | OpType::GetArg => $op.get_type(),
+            _ => panic!("value_type!: get unexpected op {}", optype.to_string()),
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! get_fns {
+    ($module : expr) => {{
+        optype_assert!($module, OpType::Module);
+
+        let mut fns = Vec::new();
+
+        for func in $module
+            .get_default_region()
+            .get_entry_block()
+            .borrow()
+            .get_ops()
+        {
+            optype_assert!(func, OpType::Function);
+            fns.push(Rc::clone(&func));
+        }
+
+        fns
+    }};
 }

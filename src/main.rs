@@ -1,4 +1,5 @@
 mod parser;
+mod pass;
 mod scf;
 mod utils;
 mod visitor;
@@ -8,6 +9,9 @@ use std::env;
 use std::fs;
 use std::process::exit;
 
+use crate::pass::manager::OptInfo;
+use crate::pass::manager::Pass;
+use crate::pass::manager::PassManager;
 use crate::scf::Print;
 use crate::visitor::visitor::Visitor;
 
@@ -17,6 +21,8 @@ fn main() {
     let mut input_path = None;
     let mut output_path = Some(String::from("a.out"));
     let mut _s: bool = false;
+
+    let mut opts = OptInfo::new();
 
     for i in 0..args.len() {
         let arg_str = args[i].as_str();
@@ -51,5 +57,9 @@ fn main() {
     let mut mlir_gen = visitor::visitor::MLIRGen::new();
     mlir_gen.visit_compunit(&program.compunit);
     let module = mlir_gen.get_module();
+
+    let mut pm = PassManager::new(&module, opts);
+    pm.run();
+
     print!("{}", module.borrow().print(0));
 }

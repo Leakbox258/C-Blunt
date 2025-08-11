@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::mem::swap;
 use std::rc::{Rc, Weak};
 
 use crate::scf::block::Block;
@@ -44,6 +45,10 @@ impl Region {
 
     pub fn is_empty(&self) -> bool {
         self.blocks.len() <= 1 && self.get_entry_block().borrow().is_empty()
+    }
+
+    pub fn replace_block(&mut self, new_blocks: &mut Vec<Shared<Block>>) {
+        swap(&mut self.blocks, new_blocks);
     }
 }
 

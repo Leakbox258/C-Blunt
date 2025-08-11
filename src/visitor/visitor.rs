@@ -1,16 +1,16 @@
-use core::panic;
-use std::any::Any;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-
-use crate::parser::ast::{self, InitVal};
+use crate::parser::ast::{self};
 use crate::scf::attr::CondFlag;
 use crate::scf::block::Block;
 use crate::scf::region::Region;
 use crate::scf::value::{Type, Value};
 use crate::scf::{Parent, attr::Attr, operation::*};
-use crate::{op_ptr_defref, value_ptr_defref, value_type};
+use crate::scf::{no_wrap::*, region};
+use crate::{value_ptr_defref, value_type};
+use core::panic;
+use std::any::Any;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 pub type Shared<T> = Rc<RefCell<T>>;
 pub type ParseredNode = Option<Value>;
@@ -156,7 +156,7 @@ pub struct Builder {
 }
 
 impl Builder {
-    fn new() -> Builder {
+    pub fn new() -> Builder {
         Builder {
             ops_stack: Vec::new(),
             blocks_stack: Vec::new(),
@@ -165,61 +165,73 @@ impl Builder {
     }
 
     // operation, though operation get a default region, usually push/pop it explicitly
-    fn parent_op(&self) -> &Shared<Operation> {
+    pub fn parent_op(&self) -> &Shared<Operation> {
         self.ops_stack.last().unwrap()
     }
 
-    fn push_op(&mut self, op: &Shared<Operation>) {
+    pub fn parent_op_mut(&mut self) -> &mut Shared<Operation> {
+        self.ops_stack.last_mut().unwrap()
+    }
+
+    pub fn push_op(&mut self, op: &Shared<Operation>) {
         self.ops_stack.push(Rc::clone(op));
     }
 
-    fn pop_op(&mut self) {
+    pub fn pop_op(&mut self) {
         self.ops_stack.pop();
     }
 
     // block
-    fn parent_block(&self) -> &Shared<Block> {
+    pub fn parent_block(&self) -> &Shared<Block> {
         self.blocks_stack.last().unwrap()
     }
 
-    fn push_block(&mut self, block: &Shared<Block>) {
+    pub fn parent_block_mut(&mut self) -> &mut Shared<Block> {
+        self.blocks_stack.last_mut().unwrap()
+    }
+
+    pub fn push_block(&mut self, block: &Shared<Block>) {
         self.blocks_stack.push(Rc::clone(block));
     }
 
-    fn pop_block(&mut self) {
+    pub fn pop_block(&mut self) {
         self.blocks_stack.pop();
     }
 
     // region
-    fn parent_region(&self) -> &Shared<Region> {
+    pub fn parent_region(&self) -> &Shared<Region> {
         self.regions_stack.last().unwrap()
     }
 
-    fn push_region(&mut self, region: &Shared<Region>) {
+    pub fn parent_region_mut(&mut self) -> &mut Shared<Region> {
+        self.regions_stack.last_mut().unwrap()
+    }
+
+    pub fn push_region(&mut self, region: &Shared<Region>) {
         self.regions_stack.push(Rc::clone(region));
     }
 
-    fn pop_region(&mut self) {
+    pub fn pop_region(&mut self) {
         self.regions_stack.pop();
     }
 
-    fn new_op(&mut self, id: u64, ty: Type, opty: OpType, rid: u64) -> Shared<Operation> {
+    pub fn new_op(&mut self, id: u64, ty: Type, opty: OpType, rid: u64) -> Shared<Operation> {
         let new_op = Operation::new(id, ty, opty, rid);
         new_op.borrow_mut().set_parent(self.parent_block().clone());
         new_op
     }
 
-    fn new_block(&mut self, id: u64) -> Shared<Block> {
+    pub fn new_block(&mut self, id: u64) -> Shared<Block> {
         let new_block = Block::new(id, &Rc::clone(self.parent_region()));
         new_block
     }
 
-    fn new_region(&mut self, id: u64) -> Shared<Region> {
+    pub fn new_region(&mut self, id: u64) -> Shared<Region> {
         let new_region = Region::new(id, &Rc::clone(self.parent_op()));
         new_region
     }
 
-    fn is_global(&self) -> bool {
+    pub fn is_global(&self) -> bool {
         self.parent_op().borrow().get_optype() == OpType::Module
     }
 }
@@ -340,7 +352,7 @@ impl MLIRGen {
                                 Type::Int32 => ori.clone(),
                                 Type::Float32 => {
                                     let convert_op = self.new_op(&Type::Int32, &OpType::F2I);
-                                    convert_op.borrow_mut().add_operands(init.clone());
+                                    convert_op.borrow_mut().add_operand(init.clone());
                                     Some(Value { def: convert_op })
                                 }
                                 _ => panic!(),
@@ -360,7 +372,7 @@ impl MLIRGen {
                                 Type::Float32 => ori.clone(),
                                 Type::Int32 => {
                                     let convert_op = self.new_op(&Type::Float32, &OpType::I2F);
-                                    convert_op.borrow_mut().add_operands(init.clone());
+                                    convert_op.borrow_mut().add_operand(init.clone());
                                     Some(Value { def: convert_op })
                                 }
                                 _ => panic!(),
@@ -597,7 +609,7 @@ impl MLIRGen {
         }
 
         let new_convert = self.new_op(dst, &optype);
-        new_convert.borrow_mut().add_operands(val);
+        new_convert.borrow_mut().add_operand(val);
 
         Value { def: new_convert }
     }
@@ -903,11 +915,11 @@ impl Visitor for MLIRGen {
 
                 self.new_op(&Type::Void, &OpType::FuncCall)
                     .borrow_mut()
-                    .add_operands(Value {
+                    .add_operand(Value {
                         def: alloc_op.clone(),
                     })
-                    .add_operands(get_0)
-                    .add_operands(get_sizes)
+                    .add_operand(get_0)
+                    .add_operand(get_sizes)
                     .set_attr(0, Attr::Name("memset".to_string()));
 
                 // gep & store
@@ -929,22 +941,22 @@ impl Visitor for MLIRGen {
                                 let address_op = self.new_op(&Type::Int64, &OpType::LAdd);
                                 address_op
                                     .borrow_mut()
-                                    .add_operands(Value {
+                                    .add_operand(Value {
                                         def: Rc::clone(&alloc_op),
                                     })
-                                    .add_operands(offset_op);
+                                    .add_operand(offset_op);
 
                                 let int2ptr_op =
                                     self.new_op(&Type::Ptr(Box::new(ty.clone())), &OpType::Int2Ptr);
                                 int2ptr_op
                                     .borrow_mut()
-                                    .add_operands(Value { def: address_op });
+                                    .add_operand(Value { def: address_op });
 
                                 self.new_op(&Type::Void, &OpType::Store)
                                     .borrow_mut()
                                     .set_attr(0, Attr::Size(4))
-                                    .add_operands(value)
-                                    .add_operands(Value { def: int2ptr_op });
+                                    .add_operand(value)
+                                    .add_operand(Value { def: int2ptr_op });
                                 elem_cnt += 1;
                             }
                         }
@@ -986,8 +998,8 @@ impl Visitor for MLIRGen {
                 self.new_op(&Type::Void, &OpType::Store)
                     .borrow_mut()
                     .set_attr(0, Attr::Size(4))
-                    .add_operands(init_op)
-                    .add_operands(Value { def: alloc_op });
+                    .add_operand(init_op)
+                    .add_operand(Value { def: alloc_op });
             }
         }
     }
@@ -1027,8 +1039,8 @@ impl Visitor for MLIRGen {
                 self.new_op(&Type::Void, &OpType::Store)
                     .borrow_mut()
                     .set_attr(0, Attr::Size(4))
-                    .add_operands(expr_op)
-                    .add_operands(lval_op);
+                    .add_operand(expr_op)
+                    .add_operand(lval_op);
 
                 // try pre-constfolding
 
@@ -1042,7 +1054,7 @@ impl Visitor for MLIRGen {
             ast::Stmt::IfElse(cond, then, or) => {
                 let cmp = self.visit_binaryexpr(cond).unwrap();
 
-                let if_else_op = self.new_op(
+                let mut if_else_op = self.new_op(
                     &Type::Void,
                     if or.is_some() {
                         &OpType::IfElse
@@ -1051,7 +1063,7 @@ impl Visitor for MLIRGen {
                     },
                 );
 
-                if_else_op.borrow_mut().add_operands(cmp);
+                if_else_op.add_operand(cmp);
 
                 self.push_op(&if_else_op);
 
@@ -1059,7 +1071,8 @@ impl Visitor for MLIRGen {
                 // but actually you cann't assign lval in cond stmt, so it's not neccessary
 
                 // then region
-                let then_region = self.new_region();
+                // let then_region = self.new_region();
+                let then_region = if_else_op.get_default_region();
 
                 self.push_region(&then_region);
 
@@ -1086,15 +1099,13 @@ impl Visitor for MLIRGen {
                 self.push_op(&while_op);
 
                 // header region
-                let header_region = self.new_region();
+                let header_region = while_op.get_default_region();
 
                 self.push_region(&header_region);
 
                 let cmp = self.visit_binaryexpr(cond).unwrap();
 
-                self.new_op(&Type::Void, &OpType::Proceed)
-                    .borrow_mut()
-                    .add_operands(cmp);
+                self.new_op(&Type::Void, &OpType::Proceed).add_operand(cmp);
 
                 self.pop_region();
 
@@ -1122,7 +1133,7 @@ impl Visitor for MLIRGen {
 
                     self.new_op(&Type::Void, &OpType::Return)
                         .borrow_mut()
-                        .add_operands(return_val);
+                        .add_operand(return_val);
                 } else {
                     let _ = self.new_op(&Type::Void, &OpType::Return);
                 }
@@ -1131,15 +1142,14 @@ impl Visitor for MLIRGen {
     }
 
     fn visit_func_def(&mut self, func_def: &ast::FuncDef) -> ParseredNode {
-        let new_func = self.new_op(&self.convert_type(&func_def.ty), &OpType::Function);
+        let mut new_func = self.new_op(&self.convert_type(&func_def.ty), &OpType::Function);
 
-        let default_region = new_func.borrow_mut().get_default_region();
+        let default_region = new_func.get_default_region();
 
         self.push_op(&new_func);
         self.push_region(&default_region);
 
         new_func
-            .borrow_mut()
             .set_attr(0, Attr::Name(func_def.name.clone()))
             .set_attr(1, self.visit_func_format_params(&func_def.params));
 
@@ -1361,7 +1371,7 @@ impl Visitor for MLIRGen {
 
                     let call_op = self.new_op(&func_def_op.get_type(), &OpType::FuncCall);
 
-                    call_op.borrow_mut().add_operands(func_def_op);
+                    call_op.borrow_mut().add_operand(func_def_op);
                     call_op
                         .borrow_mut()
                         .set_attr(0, Attr::Name(call.ident.clone()));
@@ -1377,7 +1387,7 @@ impl Visitor for MLIRGen {
 
                         if is_ptr {
                             let load = self.new_op(&value_ptr_defref!(lval_op), &OpType::Load);
-                            load.borrow_mut().add_operands(lval_op);
+                            load.borrow_mut().add_operand(lval_op);
                             Some(Value { def: load })
                         } else {
                             Some(lval_op)
@@ -1419,7 +1429,7 @@ impl Visitor for MLIRGen {
                         };
 
                         let new_unary = self.new_op(&next_unary.get_type(), &opty);
-                        new_unary.borrow_mut().add_operands(next_unary);
+                        new_unary.borrow_mut().add_operand(next_unary);
 
                         Some(Value { def: new_unary })
                     }
@@ -1441,17 +1451,17 @@ impl Visitor for MLIRGen {
                         };
 
                         let cmp = self.new_op(&Type::Bool, &opty);
-                        cmp.borrow_mut().add_operands(next_unary);
+                        cmp.borrow_mut().add_operand(next_unary);
 
                         let xor = self.new_op(&Type::Bool, &OpType::Xor);
-                        xor.borrow_mut().add_operands(Value { def: cmp });
+                        xor.borrow_mut().add_operand(Value { def: cmp });
 
                         let zext = self.new_op(&Type::Int32, &OpType::ZEXT);
-                        zext.borrow_mut().add_operands(Value { def: xor });
+                        zext.borrow_mut().add_operand(Value { def: xor });
 
                         if ty == Type::Float32 {
                             let i2f = self.new_op(&Type::Float32, &OpType::I2F);
-                            i2f.borrow_mut().add_operands(Value { def: zext });
+                            i2f.borrow_mut().add_operand(Value { def: zext });
                             return Some(Value { def: i2f });
                         }
 
@@ -1483,7 +1493,7 @@ impl Visitor for MLIRGen {
 
                 let if_else_op = self.new_op(&Type::Void, &OpType::IfElse);
 
-                if_else_op.borrow_mut().add_operands(lcmp_op);
+                if_else_op.borrow_mut().add_operand(lcmp_op);
 
                 self.push_op(&if_else_op);
 
@@ -1498,8 +1508,8 @@ impl Visitor for MLIRGen {
                 store_op
                     .borrow_mut()
                     .set_attr(0, Attr::Size(4))
-                    .add_operands(Value { def: true_op })
-                    .add_operands(Value {
+                    .add_operand(Value { def: true_op })
+                    .add_operand(Value {
                         def: Rc::clone(&alloc_op),
                     });
 
@@ -1512,14 +1522,14 @@ impl Visitor for MLIRGen {
                 let rcmp_op = self.visit_binaryexpr(land_expr).unwrap();
 
                 let setcond_op = self.new_op(&Type::Bool, &OpType::SetCond);
-                setcond_op.borrow_mut().add_operands(rcmp_op);
+                setcond_op.borrow_mut().add_operand(rcmp_op);
 
                 let store_op = self.new_op(&Type::Void, &OpType::Store);
                 store_op
                     .borrow_mut()
                     .set_attr(0, Attr::Size(4))
-                    .add_operands(Value { def: setcond_op })
-                    .add_operands(Value {
+                    .add_operand(Value { def: setcond_op })
+                    .add_operand(Value {
                         def: Rc::clone(&alloc_op),
                     });
 
@@ -1528,7 +1538,7 @@ impl Visitor for MLIRGen {
                 self.pop_op();
 
                 let load_op = self.new_op(&Type::Bool, &OpType::Load);
-                load_op.borrow_mut().add_operands(Value {
+                load_op.borrow_mut().add_operand(Value {
                     def: Rc::clone(&alloc_op),
                 });
 
@@ -1546,7 +1556,7 @@ impl Visitor for MLIRGen {
 
                 let if_else_op = self.new_op(&Type::Void, &OpType::IfElse);
 
-                if_else_op.borrow_mut().add_operands(lcmp_op);
+                if_else_op.borrow_mut().add_operand(lcmp_op);
 
                 self.push_op(&if_else_op);
 
@@ -1558,14 +1568,14 @@ impl Visitor for MLIRGen {
                 let rcmp_op = self.visit_binaryexpr(eq_expr).unwrap();
 
                 let setcond_op = self.new_op(&Type::Bool, &OpType::SetCond);
-                setcond_op.borrow_mut().add_operands(rcmp_op);
+                setcond_op.borrow_mut().add_operand(rcmp_op);
 
                 let store_op = self.new_op(&Type::Void, &OpType::Store);
                 store_op
                     .borrow_mut()
                     .set_attr(0, Attr::Size(4))
-                    .add_operands(Value { def: setcond_op })
-                    .add_operands(Value {
+                    .add_operand(Value { def: setcond_op })
+                    .add_operand(Value {
                         def: Rc::clone(&alloc_op),
                     });
 
@@ -1581,8 +1591,8 @@ impl Visitor for MLIRGen {
                 store_op
                     .borrow_mut()
                     .set_attr(0, Attr::Size(4))
-                    .add_operands(Value { def: false_op })
-                    .add_operands(Value {
+                    .add_operand(Value { def: false_op })
+                    .add_operand(Value {
                         def: Rc::clone(&alloc_op),
                     });
 
@@ -1591,7 +1601,7 @@ impl Visitor for MLIRGen {
                 self.pop_op();
 
                 let load_op = self.new_op(&Type::Bool, &OpType::Load);
-                load_op.borrow_mut().add_operands(Value {
+                load_op.borrow_mut().add_operand(Value {
                     def: Rc::clone(&alloc_op),
                 });
 
@@ -1631,10 +1641,7 @@ impl Visitor for MLIRGen {
         let new_op = self.new_op(&ty, &self.convert_op(&ty, &op));
 
         if op.is_binary() {
-            new_op
-                .borrow_mut()
-                .add_operands(lhs_op)
-                .add_operands(rhs_op);
+            new_op.borrow_mut().add_operand(lhs_op).add_operand(rhs_op);
         } else if op.is_logical() {
             match op {
                 ast::Operator::Ls => new_op.borrow_mut().set_attr(0, Attr::Cond(CondFlag::Ls)),
@@ -1690,16 +1697,16 @@ impl Visitor for MLIRGen {
                                 let get_size = self.new_int64(size as i64);
 
                                 let lmul = self.new_op(&Type::Int64, &OpType::LMul);
-                                lmul.borrow_mut().add_operands(sub).add_operands(get_size);
+                                lmul.borrow_mut().add_operand(sub).add_operand(get_size);
 
                                 let ladd = self.new_op(&inner_type, &OpType::LAdd);
                                 ladd.borrow_mut()
-                                    .add_operands(Value { def: lmul })
-                                    .add_operands(last_op);
+                                    .add_operand(Value { def: lmul })
+                                    .add_operand(last_op);
 
                                 let int2ptr =
                                     self.new_op(&Type::Ptr(Box::new(ty.clone())), &OpType::Int2Ptr);
-                                int2ptr.borrow_mut().add_operands(Value { def: ladd });
+                                int2ptr.borrow_mut().add_operand(Value { def: ladd });
 
                                 last_op = Value { def: int2ptr };
                                 array_type = inner_type.clone();

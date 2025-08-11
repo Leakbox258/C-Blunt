@@ -38,8 +38,9 @@ impl Print for Block {
             "".to_string()
         } else {
             format!(
-                "\n{}{{\n{}\n{}}}",
+                "\n{}%{} {{\n{}\n{}}}",
                 Block::INDENT.to_string().repeat(indent),
+                self.id,
                 self.operations
                     .iter()
                     .map(|op| op.borrow().print(indent + 1))
@@ -63,6 +64,10 @@ impl Block {
         new_block
     }
 
+    pub fn get_id(&self) -> u64 {
+        self.id
+    }
+
     pub fn add_op(&mut self, op: &Shared<Operation>) {
         self.operations.push(Rc::clone(op));
     }
@@ -73,6 +78,14 @@ impl Block {
 
     pub fn append_ops(&mut self, ops: &mut Vec<Shared<Operation>>) {
         self.operations.append(ops);
+    }
+
+    pub fn get_ops(&self) -> &Vec<Shared<Operation>> {
+        &self.operations
+    }
+
+    pub fn get_ops_as_mut(&mut self) -> &mut Vec<Shared<Operation>> {
+        &mut self.operations
     }
 
     pub fn is_empty(&self) -> bool {

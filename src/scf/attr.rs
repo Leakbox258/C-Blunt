@@ -1,6 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
-
-use crate::scf::{block::Block, value::Type};
+use crate::{
+    scf::{block::Block, no_wrap::BlockTrait, value::Type},
+    visitor::visitor::Shared,
+};
 
 // this is where to apply most of dialect
 
@@ -35,7 +36,7 @@ pub enum Attr {
 
     Name(String),
     Int32(i32),           // const
-    Int64(i64),           //const
+    Int64(i64),           // const
     IntArray(Vec<i32>),   // const
     Float(f32),           // const
     FloatArray(Vec<f32>), // const
@@ -45,6 +46,9 @@ pub enum Attr {
     Args(Vec<(String, Type)>),
     ArgSeq(usize),
     Cond(CondFlag),
+    True(Shared<Block>),
+    False(Shared<Block>),
+    NoCond(Shared<Block>),
 }
 
 impl ToString for Attr {
@@ -82,6 +86,9 @@ impl ToString for Attr {
             ),
             Attr::ArgSeq(seq) => format!(" <seq = {}>", seq),
             Attr::Cond(cond) => format!(" <cond = {}>", cond.to_string()),
+            Attr::True(bb) => format!(" <true = %{}>", bb.get_id()),
+            Attr::False(bb) => format!(" <false = %{}>", bb.get_id()),
+            Attr::NoCond(bb) => format!(" <nocond = %{}>", bb.get_id()),
         }
     }
 }
