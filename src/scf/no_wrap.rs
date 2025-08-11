@@ -1,9 +1,9 @@
-use crate::scf::Print;
 use crate::scf::attr::Attr;
 use crate::scf::block::Block;
 use crate::scf::operation::{OpType, Operation};
 use crate::scf::region::Region;
 use crate::scf::value::Value;
+use crate::scf::{Parent, Print};
 use crate::visitor::visitor::Shared;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -48,11 +48,13 @@ define_methods_trait! {
                             get_default_region() -> Shared<Region>,
                             get_region(seq : usize) -> Shared<Region>,
                             get_optype() -> OpType,
-                            print(indent : usize) -> String
+                            print(indent : usize) -> String,
+                            get_parent() -> Shared<Block>
     ],
     mutable :           [
                             add_use(new_use : Shared<Operation>),
-                            set_id(id : u64)
+                            set_id(id : u64),
+                            set_parent(new_parent : Shared<Block>)
     ],
     chaining_mutable :  [
                             add_operand(new_operand : Value),

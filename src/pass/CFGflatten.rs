@@ -296,6 +296,7 @@ impl CFGflatten {
 
         // exit block (push only)
         self.builder.push_block(&exit_block);
+        flatten_blocks.push(exit_block);
 
         flatten_blocks
     }
