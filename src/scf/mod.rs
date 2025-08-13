@@ -25,3 +25,298 @@ pub trait Print {
     const INDENT: &str = "  ";
     fn print(&self, indent: usize) -> String;
 }
+
+#[macro_use]
+pub mod r#macro {
+
+    macro_rules! optype_checkif {
+        ($operation : expr, $optype : expr) => {
+            $operation.get_optype() == $optype
+        };
+    }
+
+    macro_rules! optype_assert {
+        ($operation : expr, $optype : expr) => {
+            assert_eq!($operation.get_optype(), $optype)
+        };
+    }
+
+    macro_rules! op_ptr_defref {
+        ($op : expr) => {{
+            let optype = $op.get_optype();
+            match optype {
+                OpType::Store => $op.get_operand(2).get_type().deref(),
+                OpType::Load => $op.get_operand(1).get_type().deref(),
+                OpType::Int2Ptr => $op.get_type().deref(),
+                OpType::Ptr2Int => $op.get_operand(1).get_type().deref(),
+                OpType::DeclGlobal => $op.get_type().deref(),
+                OpType::Alloca => $op.get_type().deref(),
+                OpType::GetArg => $op.get_type().deref(),
+                _ => panic!("op_ptr_defref!: get unexpected op {}", optype.to_string()),
+            }
+        }};
+    }
+
+    macro_rules! value_ptr_defref {
+        ($op : expr) => {{
+            let optype = $op.def.get_optype();
+            match optype {
+                OpType::Store => $op.def.get_operand(2).get_type().deref(),
+                OpType::Load => $op.def.get_operand(1).get_type().deref(),
+                OpType::Int2Ptr => $op.get_type().deref(),
+                OpType::Ptr2Int => $op.def.get_operand(1).get_type().deref(),
+                OpType::DeclGlobal => $op.get_type().deref(),
+                OpType::Alloca => $op.get_type().deref(),
+                OpType::GetArg => $op.get_type().deref(),
+                _ => panic!(
+                    "value_ptr_defref!: get unexpected op {}",
+                    optype.to_string()
+                ),
+            }
+        }};
+    }
+
+    macro_rules! value_type {
+        ($op : expr) => {{
+            let optype = $op.def.get_optype();
+            match optype {
+                OpType::ICmp
+                | OpType::FCmp
+                | OpType::Neg
+                | OpType::FNeg
+                | OpType::Add
+                | OpType::LAdd
+                | OpType::FAdd
+                | OpType::Sub
+                | OpType::LSub
+                | OpType::FSub
+                | OpType::Mul
+                | OpType::LMul
+                | OpType::FMul
+                | OpType::Div
+                | OpType::LDiv
+                | OpType::FDiv
+                | OpType::Mod
+                | OpType::LMod
+                | OpType::FMod
+                | OpType::Load
+                | OpType::FuncCall
+                | OpType::GetI
+                | OpType::GetL
+                | OpType::GetF
+                | OpType::GetArg => $op.get_type(),
+                _ => panic!("value_type!: get unexpected op {}", optype.to_string()),
+            }
+        }};
+    }
+
+    macro_rules! get_fns {
+        ($module : expr) => {{
+            optype_assert!($module, OpType::Module);
+
+            let mut fns = Vec::new();
+
+            for func in $module
+                .get_default_region()
+                .get_entry_block()
+                .borrow()
+                .get_ops()
+            {
+                if !optype_checkif!(func, OpType::Function) {
+                    continue;
+                }
+                fns.push(Rc::clone(&func));
+            }
+
+            fns
+        }};
+    }
+
+    macro_rules! get_decl {
+        ($module : expr) => {{
+            optype_assert!($module, OpType::Module);
+
+            let mut decls = Vec::new();
+
+            for decl in $module
+                .get_default_region()
+                .get_entry_block()
+                .borrow()
+                .get_ops()
+            {
+                if !optype_checkif!(decl, OpType::DeclGlobal) {
+                    continue;
+                }
+                decls.push(Rc::clone(&decl));
+            }
+
+            decls
+        }};
+    }
+
+    macro_rules! fn_decl_only {
+        ($func : expr) => {{
+            optype_assert!($func, OpType::Function);
+
+            if matches!($func.get_attr(2), Attr::DeclOnly) {
+                true
+            } else {
+                false
+            }
+        }};
+    }
+
+    macro_rules! fn_name {
+        ($func : expr) => {{
+            optype_assert!($func, OpType::Function);
+
+            match $func.get_attr(0).clone() {
+                Attr::Name(fn_name) => fn_name,
+                _ => panic!(),
+            }
+        }};
+    }
+
+    macro_rules! fn_format_args {
+        ($func : expr) => {{
+            optype_assert!($func, OpType::Function);
+
+            match $func.get_attr(1).clone() {
+                Attr::Args(args) => args,
+                _ => panic!(),
+            }
+        }};
+    }
+
+    macro_rules! get_name {
+        ($op : expr) => {{
+            let mut name = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr.clone() {
+                    Attr::Name(n) => name = Some(n),
+                    _ => continue,
+                }
+            }
+
+            name
+        }};
+    }
+
+    macro_rules! get_align {
+        ($op : expr) => {{
+            let mut align = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr.clone() {
+                    Attr::Align(a) => align = Some(a),
+                    _ => continue,
+                }
+            }
+
+            align
+        }};
+    }
+
+    macro_rules! get_int {
+        ($op : expr) => {{
+            let mut r#i32 = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::Int32(i) => r#i32 = Some(*i),
+                    _ => continue,
+                }
+            }
+
+            r#i32
+        }};
+    }
+
+    macro_rules! get_long {
+        ($op : expr) => {{
+            let mut r#i64 = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::Int64(l) => r#i64 = Some(*l),
+                    _ => continue,
+                }
+            }
+
+            r#i64
+        }};
+    }
+
+    macro_rules! get_float {
+        ($op : expr) => {{
+            let mut r#f32 = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::Float(f) => r#f32 = Some(*f),
+                    _ => continue,
+                }
+            }
+
+            r#f32
+        }};
+    }
+
+    macro_rules! get_cond {
+        ($op : expr) => {{
+            let mut cond = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::Cond(c) => cond = Some(c.clone()),
+                    _ => continue,
+                }
+            }
+
+            cond
+        }};
+    }
+
+    macro_rules! get_true {
+        ($op : expr) => {{
+            let mut label = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::True(l) => label = Some(Weak::upgrade(l).unwrap()),
+                    _ => continue,
+                }
+            }
+
+            label
+        }};
+    }
+
+    macro_rules! get_false {
+        ($op : expr) => {{
+            let mut label = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::False(l) => label = Some(Weak::upgrade(l).unwrap()),
+                    _ => continue,
+                }
+            }
+
+            label
+        }};
+    }
+
+    macro_rules! get_nocond {
+        ($op : expr) => {{
+            let mut label = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::NoCond(l) => label = Some(Weak::upgrade(l).unwrap()),
+                    _ => continue,
+                }
+            }
+
+            label
+        }};
+    }
+
+    pub(crate) use {
+        fn_decl_only, fn_format_args, fn_name, get_align, get_cond, get_decl, get_false, get_float,
+        get_fns, get_int, get_long, get_name, get_nocond, get_true, op_ptr_defref, optype_assert,
+        optype_checkif, value_ptr_defref, value_type,
+    };
+}

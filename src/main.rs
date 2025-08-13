@@ -1,16 +1,17 @@
+mod interpreter;
 mod parser;
 mod pass;
 mod scf;
 mod utils;
 mod visitor;
-use parser::sysy;
 
+use parser::sysy;
 use std::env;
 use std::fs;
 use std::process::exit;
 
+use crate::interpreter::interpreter::Interpreter;
 use crate::pass::manager::OptInfo;
-use crate::pass::manager::Pass;
 use crate::pass::manager::PassManager;
 use crate::scf::Print;
 use crate::visitor::visitor::Visitor;
@@ -61,5 +62,7 @@ fn main() {
     let mut pm = PassManager::new(&module, opts);
     pm.run();
 
-    print!("{}", module.borrow().print(0));
+    // print!("{}", module.borrow().print(0));
+
+    let _ = Interpreter::interpret(module, Box::new(std::io::stdout()));
 }

@@ -1,12 +1,12 @@
 use crate::pass::manager::{Pass, PassFactory};
 use crate::scf::attr::Attr;
 use crate::scf::block::Block;
+use crate::scf::r#macro::*;
 use crate::scf::no_wrap::*;
 use crate::scf::operation::OpType;
 use crate::scf::operation::Operation;
 use crate::scf::value::Type;
 use crate::visitor::visitor::{Builder, Shared};
-use crate::{get_fns, optype_assert, optype_checkif};
 use std::rc::Rc;
 
 pub struct CFGflatten {
@@ -126,8 +126,8 @@ impl CFGflatten {
 
                 process_op
                     .add_operand(cond_value)
-                    .set_attr(0, Attr::True(Rc::clone(&body_block.unwrap())))
-                    .set_attr(1, Attr::False(Rc::clone(&exit_block.unwrap())));
+                    .set_attr(0, Attr::True(Rc::downgrade(&body_block.unwrap())))
+                    .set_attr(1, Attr::False(Rc::downgrade(&exit_block.unwrap())));
 
                 continue;
             } else if optype_checkif!(op, OpType::Break) {
@@ -135,7 +135,7 @@ impl CFGflatten {
 
                 let mut break_op = self.new_op(&Type::Void, &OpType::Branch);
 
-                break_op.set_attr(0, Attr::NoCond(Rc::clone(&exit_block.unwrap())));
+                break_op.set_attr(0, Attr::NoCond(Rc::downgrade(&exit_block.unwrap())));
 
                 continue;
             } else if optype_checkif!(op, OpType::Continue) {
@@ -143,7 +143,7 @@ impl CFGflatten {
 
                 let mut continue_op = self.new_op(&Type::Void, &OpType::Branch);
 
-                continue_op.set_attr(0, Attr::NoCond(Rc::clone(&body_block.unwrap())));
+                continue_op.set_attr(0, Attr::NoCond(Rc::downgrade(&body_block.unwrap())));
 
                 continue;
             }
@@ -167,8 +167,8 @@ impl CFGflatten {
         let mut branch_op = self.new_op(&Type::Void, &OpType::Branch);
         branch_op
             .add_operand(cond)
-            .set_attr(0, Attr::True(Rc::clone(&true_block)))
-            .set_attr(1, Attr::False(Rc::clone(&exit_block)));
+            .set_attr(0, Attr::True(Rc::downgrade(&true_block)))
+            .set_attr(1, Attr::False(Rc::downgrade(&exit_block)));
 
         // then block
 
@@ -183,7 +183,7 @@ impl CFGflatten {
         ));
 
         let mut branch_op = self.new_op(&Type::Void, &OpType::Branch);
-        branch_op.set_attr(0, Attr::NoCond(Rc::clone(&exit_block)));
+        branch_op.set_attr(0, Attr::NoCond(Rc::downgrade(&exit_block)));
 
         self.builder.pop_block();
 
@@ -208,8 +208,8 @@ impl CFGflatten {
         let mut branch_op = self.new_op(&Type::Void, &OpType::Branch);
         branch_op
             .add_operand(cond)
-            .set_attr(0, Attr::True(Rc::clone(&true_block)))
-            .set_attr(1, Attr::False(Rc::clone(&false_block)));
+            .set_attr(0, Attr::True(Rc::downgrade(&true_block)))
+            .set_attr(1, Attr::False(Rc::downgrade(&false_block)));
 
         // then block
 
@@ -224,7 +224,7 @@ impl CFGflatten {
         ));
 
         let mut branch_op = self.new_op(&Type::Void, &OpType::Branch);
-        branch_op.set_attr(0, Attr::NoCond(Rc::clone(&exit_block)));
+        branch_op.set_attr(0, Attr::NoCond(Rc::downgrade(&exit_block)));
 
         self.builder.pop_block();
 
@@ -241,7 +241,7 @@ impl CFGflatten {
         ));
 
         let mut branch_op = self.new_op(&Type::Void, &OpType::Branch);
-        branch_op.set_attr(0, Attr::NoCond(Rc::clone(&exit_block)));
+        branch_op.set_attr(0, Attr::NoCond(Rc::downgrade(&exit_block)));
 
         self.builder.pop_block();
 
@@ -262,7 +262,7 @@ impl CFGflatten {
 
         // emit branch in entry block
         let mut branch_op = self.new_op(&Type::Void, &OpType::Branch);
-        branch_op.set_attr(0, Attr::NoCond(Rc::clone(&header_block)));
+        branch_op.set_attr(0, Attr::NoCond(Rc::downgrade(&header_block)));
 
         // header block
         self.builder.push_block(&header_block);
@@ -290,7 +290,7 @@ impl CFGflatten {
 
         // body may not explicit use 'continue'
         self.new_op(&Type::Void, &OpType::Branch)
-            .set_attr(0, Attr::NoCond(Rc::clone(&body_block)));
+            .set_attr(0, Attr::NoCond(Rc::downgrade(&body_block)));
 
         self.builder.pop_block();
 

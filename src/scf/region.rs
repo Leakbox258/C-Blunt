@@ -32,6 +32,10 @@ impl Region {
         Rc::clone(&self.blocks[0])
     }
 
+    pub fn borrow_entry_block(&self) -> &Shared<Block> {
+        &self.blocks[0]
+    }
+
     pub fn add_block(&mut self, new_block: Shared<Block>) {
         let exists = self
             .blocks
@@ -49,6 +53,10 @@ impl Region {
 
     pub fn replace_block(&mut self, new_blocks: &mut Vec<Shared<Block>>) {
         swap(&mut self.blocks, new_blocks);
+    }
+
+    pub fn get_blocks(&self) -> &Vec<Shared<Block>> {
+        &self.blocks
     }
 }
 

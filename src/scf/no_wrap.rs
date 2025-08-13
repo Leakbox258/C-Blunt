@@ -2,17 +2,18 @@ use crate::scf::attr::Attr;
 use crate::scf::block::Block;
 use crate::scf::operation::{OpType, Operation};
 use crate::scf::region::Region;
-use crate::scf::value::Value;
+use crate::scf::value::{Type, Value};
 use crate::scf::{Parent, Print};
 use crate::visitor::visitor::Shared;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 macro_rules! define_methods_trait {
     ($struct_name:ident, $struct_methods:ident,
      immutable: [$($immut_method:ident($($immut_params:ident : $immut_param_ty:ty),*) $(-> $immut_ret:ty)?),*],
      mutable: [$($mut_method:ident($($mut_params:ident : $mut_param_ty:ty),*) $(-> $mut_ret:ty)?),*],
-     chaining_mutable: [$($chain_mut_method:ident($($chain_mut_params:ident : $chain_mut_param_ty:ty),*)),*]) => {
+     chaining_mutable: [$($chain_mut_method:ident($($chain_mut_params:ident : $chain_mut_param_ty:ty),*)),*],
+     borrow_immutable: [$($borrow_immut_method:ident($($borrow_immut_params:ident : $borrow_immut_param_ty:ty),*) $(-> $borrow_immut_ret:ty)?),*]) => {
 
         pub trait $struct_methods {
             $(fn $immut_method(&self, $($immut_params : $immut_param_ty),*) $(-> $immut_ret)?;)*
@@ -20,6 +21,8 @@ macro_rules! define_methods_trait {
             $(fn $mut_method(&mut self, $($mut_params : $mut_param_ty),*) $(-> $mut_ret)?;)*
 
             $(fn $chain_mut_method(&mut self, $($chain_mut_params : $chain_mut_param_ty),*) -> &mut Self;)*
+
+            $(fn $borrow_immut_method(&self, $($borrow_immut_params : $borrow_immut_param_ty),*) $(-> Ref<$borrow_immut_ret>)?;)*
         }
 
         impl $struct_methods for Rc<RefCell<$struct_name>> {
@@ -35,6 +38,10 @@ macro_rules! define_methods_trait {
                 self.borrow_mut().$chain_mut_method($($chain_mut_params,)*);
                 self
             })*
+
+            $(fn $borrow_immut_method(&self, $($borrow_immut_params : $borrow_immut_param_ty),*) $(-> Ref<$borrow_immut_ret>)? {
+                Ref::map(self.borrow(), |inner| inner.$borrow_immut_method($($borrow_immut_params,)*))
+            })*
         }
     };
 }
@@ -48,8 +55,10 @@ define_methods_trait! {
                             get_default_region() -> Shared<Region>,
                             get_region(seq : usize) -> Shared<Region>,
                             get_optype() -> OpType,
+                            get_type() -> Type,
                             print(indent : usize) -> String,
-                            get_parent() -> Shared<Block>
+                            get_parent() -> Shared<Block>,
+                            get_attr(seq : usize) -> Attr
     ],
     mutable :           [
                             add_use(new_use : Shared<Operation>),
@@ -63,6 +72,11 @@ define_methods_trait! {
                             set_operand(seq : usize, new_operand : Shared<Value>),
                             add_region(new_region : Shared<Region>),
                             set_attr(seq : usize, attr : Attr)
+    ],
+    borrow_immutable :     [
+                            // get_default_block() -> Ref<Shared<Block>>,
+                            get_attr_as_ref(seq : usize) -> Attr,
+                            get_attrs() -> [Attr;8]
     ]
 }
 
@@ -73,7 +87,6 @@ define_methods_trait! {
                             get_entry_block() -> Shared<Block>,
                             is_empty() -> bool,
                             print(indent : usize) -> String
-
     ],
     mutable :           [
                             add_block(new_block : Shared<Block>),
@@ -81,6 +94,9 @@ define_methods_trait! {
     ],
     chaining_mutable :  [
 
+    ],
+    borrow_immutable :     [
+                            get_blocks() -> Vec<Shared<Block>>
     ]
 }
 
@@ -88,7 +104,6 @@ define_methods_trait! {
     Block,
     BlockTrait,
     immutable :         [
-                            // get_ops() -> &Vec<Shared<Operation>>,
                             get_id() -> u64,
                             is_empty() -> bool,
                             print(indent : usize) -> String
@@ -98,9 +113,12 @@ define_methods_trait! {
                             add_op(op : &Shared<Operation>),
                             del_op(op : &Shared<Operation>),
                             append_ops(ops : &mut Vec<Shared<Operation>>)
-                            // get_ops_as_mut() -> &mut Vec<Shared<Operation>>
     ],
     chaining_mutable :  [
 
+    ],
+    borrow_immutable :  [
+                            get_ops() -> Vec<Shared<Operation>>
+                            // get_ops_as_mut() -> &mut Vec<Shared<Operation>>
     ]
 }

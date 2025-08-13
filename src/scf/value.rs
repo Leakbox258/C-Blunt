@@ -85,6 +85,22 @@ impl Type {
         }
     }
 
+    // dowmgrade array type to ptr type
+    pub fn downgrade(&self) -> Type {
+        match self {
+            Self::Array(inner_ty) => {
+                let (inner_type, capacity) = inner_ty.as_ref();
+                if capacity.is_some() {
+                    inner_type.downgrade()
+                } else {
+                    Type::Ptr(Box::new(inner_type.clone()))
+                }
+            }
+            Self::Bool | Self::Int32 | Self::Int64 | Self::Float32 | Self::Ptr(_) => self.clone(),
+            Self::Void => panic!(),
+        }
+    }
+
     pub fn get_btyes(&self) -> usize {
         match self {
             Type::Int32 => 4,
@@ -146,36 +162,19 @@ impl Type {
 impl ToString for Type {
     fn to_string(&self) -> String {
         match self {
-            Type::Int32 => "int".to_string(),
-            Type::Int64 => "long".to_string(),
+            Type::Int32 => "i32".to_string(),
+            Type::Int64 => "i64".to_string(),
             Type::Float32 => "float".to_string(),
             Type::Void => "void".to_string(),
-            Type::Bool => "bool".to_string(),
+            Type::Bool => "i1".to_string(),
             Type::Ptr(ty) => format!("{}*", ty.to_string()),
             Type::Array(array_type) => {
                 let (inner_type, size) = array_type.as_ref();
 
-                let mut str = String::default();
-                let mut current_type = inner_type;
-                let mut current_size = *size;
-
-                loop {
-                    match current_type {
-                        Type::Array(more_inner) => {
-                            match current_size {
-                                Some(cnt) if cnt == usize::MAX => str += "[]",
-                                Some(cnt) => str += format!("[{}]", cnt).as_str(),
-                                None => str += "[]",
-                            }
-                            let (next_type, next_size) = more_inner.as_ref();
-                            current_type = next_type;
-                            current_size = *next_size;
-                        }
-                        _ => break,
-                    }
+                match size {
+                    Some(elem_size) => format!("[{} x {}]", elem_size, inner_type.to_string()),
+                    None => inner_type.to_string(),
                 }
-
-                str
             }
         }
     }

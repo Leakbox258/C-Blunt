@@ -9,6 +9,7 @@ use crate::{
     },
     visitor::visitor::Shared,
 };
+use std::cell::Ref;
 use std::fmt;
 use std::{
     cell::RefCell,
@@ -115,6 +116,14 @@ impl Operation {
         self.operands[seq].clone()
     }
 
+    pub fn get_operands(&self) -> &Vec<Value> {
+        &self.operands
+    }
+
+    pub fn get_operands_as_mut(&mut self) -> &mut Vec<Value> {
+        &mut self.operands
+    }
+
     pub fn add_region(&mut self, new_region: Shared<Region>) -> &mut Self {
         let exists = self
             .regions
@@ -131,6 +140,12 @@ impl Operation {
         Rc::clone(self.regions.get(0).unwrap())
     }
 
+    pub fn get_default_block(&self) -> Ref<Shared<Block>> {
+        Ref::map(self.regions.get(0).unwrap().borrow(), |region| {
+            region.borrow_entry_block()
+        })
+    }
+
     pub fn get_region(&self, seq: usize) -> Shared<Region> {
         Rc::clone(&self.regions.get(seq).unwrap())
     }
@@ -138,6 +153,18 @@ impl Operation {
     pub fn set_attr(&mut self, seq: usize, attr: Attr) -> &mut Self {
         self.attrs[seq] = attr;
         self
+    }
+
+    pub fn get_attr(&self, seq: usize) -> Attr {
+        self.attrs[seq].clone()
+    }
+
+    pub fn get_attr_as_ref<'a>(&self, seq: usize) -> &Attr {
+        &self.attrs[seq]
+    }
+
+    pub fn get_attrs(&self) -> &[Attr; 8] {
+        &self.attrs
     }
 
     pub fn get_type(&self) -> Type {
@@ -229,7 +256,6 @@ pub enum OpType {
     LCmp,
     FCmp,
     // flow-control
-    Goto,
     Proceed,
     Break,
     Continue,
@@ -261,6 +287,7 @@ pub enum OpType {
     FMod,
     // bitwise
     Xor,
+    LXor,
     // convert
     F2I,
     I2F,
@@ -283,20 +310,6 @@ pub enum OpType {
     GetArg,
 }
 
-#[macro_export]
-macro_rules! optype_checkif {
-    ($operation : expr, $optype : expr) => {
-        $operation.get_optype() == $optype
-    };
-}
-
-#[macro_export]
-macro_rules! optype_assert {
-    ($operation : expr, $optype : expr) => {
-        assert_eq!($operation.get_optype(), $optype)
-    };
-}
-
 impl fmt::Display for OpType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -308,7 +321,6 @@ impl fmt::Display for OpType {
             Self::ICmp => write!(f, "icmp"),
             Self::LCmp => write!(f, "lcmp"),
             Self::FCmp => write!(f, "fcmp"),
-            Self::Goto => write!(f, "goto"),
             Self::Proceed => write!(f, "proceed"),
             Self::Break => write!(f, "break"),
             Self::Continue => write!(f, "continue"),
@@ -336,6 +348,7 @@ impl fmt::Display for OpType {
             Self::LMod => write!(f, "lmod"),
             Self::FMod => write!(f, "fmod"),
             Self::Xor => write!(f, "xor"),
+            Self::LXor => write!(f, "lxor"),
             Self::F2I => write!(f, "f2i"),
             Self::I2F => write!(f, "i2f"),
             Self::ZEXT => write!(f, "zext"),
@@ -356,97 +369,4 @@ impl fmt::Display for OpType {
             Self::GetArg => write!(f, "getarg"),
         }
     }
-}
-
-#[macro_export]
-macro_rules! op_ptr_defref {
-    ($op : expr) => {{
-        let optype = $op.get_optype();
-        match optype {
-            OpType::Store => $op.get_operand(2).get_type().deref(),
-            OpType::Load => $op.get_operand(1).get_type().deref(),
-            OpType::Int2Ptr => $op.get_type().deref(),
-            OpType::Ptr2Int => $op.get_operand(1).get_type().deref(),
-            OpType::DeclGlobal => $op.get_type().deref(),
-            OpType::Alloca => $op.get_type().deref(),
-            OpType::GetArg => $op.get_type().deref(),
-            _ => panic!("op_ptr_defref!: get unexpected op {}", optype.to_string()),
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! value_ptr_defref {
-    ($op : expr) => {{
-        let optype = $op.def.get_optype();
-        match optype {
-            OpType::Store => $op.def.get_operand(2).get_type().deref(),
-            OpType::Load => $op.def.get_operand(1).get_type().deref(),
-            OpType::Int2Ptr => $op.get_type().deref(),
-            OpType::Ptr2Int => $op.def.get_operand(1).get_type().deref(),
-            OpType::DeclGlobal => $op.get_type().deref(),
-            OpType::Alloca => $op.get_type().deref(),
-            OpType::GetArg => $op.get_type().deref(),
-            _ => panic!(
-                "value_ptr_defref!: get unexpected op {}",
-                optype.to_string()
-            ),
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! value_type {
-    ($op : expr) => {{
-        let optype = $op.def.get_optype();
-        match optype {
-            OpType::ICmp
-            | OpType::FCmp
-            | OpType::Neg
-            | OpType::FNeg
-            | OpType::Add
-            | OpType::LAdd
-            | OpType::FAdd
-            | OpType::Sub
-            | OpType::LSub
-            | OpType::FSub
-            | OpType::Mul
-            | OpType::LMul
-            | OpType::FMul
-            | OpType::Div
-            | OpType::LDiv
-            | OpType::FDiv
-            | OpType::Mod
-            | OpType::LMod
-            | OpType::FMod
-            | OpType::Load
-            | OpType::FuncCall
-            | OpType::GetI
-            | OpType::GetL
-            | OpType::GetF
-            | OpType::GetArg => $op.get_type(),
-            _ => panic!("value_type!: get unexpected op {}", optype.to_string()),
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! get_fns {
-    ($module : expr) => {{
-        optype_assert!($module, OpType::Module);
-
-        let mut fns = Vec::new();
-
-        for func in $module
-            .get_default_region()
-            .get_entry_block()
-            .borrow()
-            .get_ops()
-        {
-            optype_assert!(func, OpType::Function);
-            fns.push(Rc::clone(&func));
-        }
-
-        fns
-    }};
 }
