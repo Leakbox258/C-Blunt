@@ -1219,7 +1219,10 @@ impl Visitor for MLIRGen {
             if sizes.is_empty() {
                 ty = self.convert_type(&format_arg.ty);
             } else {
-                ty = self.generate_array_type(&format_arg.ty, sizes);
+                // array arg downgrade as ptr arg
+                ty = self
+                    .generate_array_type(&format_arg.ty, sizes.clone())
+                    .downgrade();
             }
 
             let ident = format_arg.name.clone();
@@ -1227,7 +1230,22 @@ impl Visitor for MLIRGen {
             let mut getarg_op = self.new_op(&ty, &OpType::GetArg);
             getarg_op.set_attr(0, Attr::ArgSeq(seq));
 
-            self.symbol_add(&ident, Value { def: getarg_op }, &ty);
+            let ptr_ty = Type::new_ptr_type(&ty, &sizes);
+            let mut alloc_op = self.new_op(&ptr_ty, &OpType::Alloca);
+            alloc_op
+                .set_attr(0, Attr::Size(ty.get_btyes()))
+                .set_attr(1, Attr::Align(ty.get_btyes() as u32));
+
+            let mut store_op = self.new_op(&Type::Void, &OpType::Store);
+            store_op
+                .add_operand(Value { def: getarg_op })
+                .add_operand(Value {
+                    def: Rc::clone(&alloc_op),
+                })
+                .set_attr(0, Attr::Size(ty.get_btyes()))
+                .set_attr(1, Attr::Align(ty.get_btyes() as u32));
+
+            self.symbol_add(&ident, Value { def: alloc_op }, &ptr_ty);
             args.push((ident, ty));
             seq += 1;
         }

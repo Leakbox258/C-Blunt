@@ -96,7 +96,7 @@ impl ToString for Attr {
             Attr::True(bb) => format!(" <true = %{}>", Weak::upgrade(bb).unwrap().get_id()),
             Attr::False(bb) => format!(" <false = %{}>", Weak::upgrade(bb).unwrap().get_id()),
             Attr::NoCond(bb) => format!(" <nocond = %{}>", Weak::upgrade(bb).unwrap().get_id()),
-            Attr::Align(align) => format!(" <align = %{}>", align),
+            Attr::Align(align) => format!(" <align = {}>", align),
         }
     }
 }

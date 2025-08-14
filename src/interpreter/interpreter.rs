@@ -115,8 +115,8 @@ impl Interpreter {
             }
         }
 
-        if args.len() > 0 {
-            args = args.split_off(args.len() - 2);
+        if args.ends_with(", ") {
+            let _ = args.split_off(args.len() - 2);
         }
 
         let decl = format!(
