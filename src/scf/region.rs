@@ -58,6 +58,10 @@ impl Region {
     pub fn get_blocks(&self) -> &Vec<Shared<Block>> {
         &self.blocks
     }
+
+    pub fn get_blocks_as_mut(&mut self) -> &mut Vec<Shared<Block>> {
+        &mut self.blocks
+    }
 }
 
 impl Parent for Region {

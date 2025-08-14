@@ -90,6 +90,13 @@ impl CFGflatten {
             None,
         );
 
+        for block in &mut blocks {
+            let mut ops = block.get_ops_as_mut();
+            if let Some(pos) = ops.iter().position(|op| op.get_optype() == OpType::Return) {
+                let _ = ops.split_off(pos + 1);
+            }
+        }
+
         func.get_default_region().replace_block(&mut blocks);
 
         self.builder.pop_block();

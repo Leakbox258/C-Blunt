@@ -98,7 +98,7 @@ impl Interpreter {
         let mut body = String::new();
 
         for block in r#fn.get_default_region().get_blocks().iter() {
-            body += format!("{}:\n", block.get_id()).as_str();
+            body += format!("__{}:\n", block.get_id()).as_str();
             for op in block.borrow().get_ops() {
                 // handle args
                 if optype_checkif!(op, OpType::GetArg) {
@@ -166,12 +166,15 @@ impl Interpreter {
             }
             OpType::Branch => match get_false!(op) {
                 Some(false_label) => Some(format!(
-                    "br i1 %{}, lable %{}, lable %{}\n",
+                    "br i1 %{}, label %__{}, label %__{}\n",
                     op.get_operand(0).def.get_id(),
                     get_true!(op).unwrap().get_id(),
                     false_label.get_id()
                 )),
-                None => Some(format!("br label %{}\n", get_nocond!(op).unwrap().get_id())),
+                None => Some(format!(
+                    "br label %__{}\n",
+                    get_nocond!(op).unwrap().get_id()
+                )),
             },
             OpType::Return => match op.get_type() {
                 Type::Void => Some(format!("ret {}\n", op.get_type().to_string())),
@@ -181,14 +184,12 @@ impl Interpreter {
                     op_to_literal(&op.get_operand(0))
                 )),
             },
-            OpType::Alloca => {
-                Some(format!(
-                    "%{} = alloca {}, align {}\n",
-                    op.get_id(),
-                    op.get_type().to_string(), // op_ptr_defref!(op).to_string(),
-                    get_align!(op).unwrap()
-                ))
-            }
+            OpType::Alloca => Some(format!(
+                "%{} = alloca {}, align {}\n",
+                op.get_id(),
+                op_ptr_defref!(op).to_string(),
+                get_align!(op).unwrap()
+            )),
             OpType::Store => Some(format!(
                 "store {} {}, {} {}, align {}\n",
                 op.get_operand(0).get_type().to_string(),
@@ -207,7 +208,7 @@ impl Interpreter {
             )),
             OpType::Neg => {
                 Some(format!(
-                    "%{} = sub {}, 0, {}\n",
+                    "%{} = sub {} 0, {}\n",
                     op.get_id(),
                     op.get_operand(0).get_type().to_string(),
                     op_to_literal(&op.get_operand(0))
@@ -325,7 +326,11 @@ impl Interpreter {
                 };
 
                 for (i, arg) in op.borrow().get_operands().iter().enumerate() {
-                    if i > 0 {
+                    if i == 0 {
+                        continue; // skip func def operation
+                    }
+
+                    if i > 1 {
                         str += ", ";
                     }
                     str += &(arg.get_type().to_string() + " " + &op_to_literal(arg));
@@ -393,11 +398,15 @@ fn format_array_i32(shape: &[usize], values: &[i32]) -> String {
             format!("{} zeroinitializer", sub_type)
         } else {
             let inner = format_array_i32(sub_shape, sub_values);
-            format!("{} [{}]", sub_type, inner)
+            if sub_shape.is_empty() {
+                format!("{}", inner)
+            } else {
+                format!("{} {}", sub_type, inner)
+            }
         };
         parts.push(part);
     }
-    parts.join(", ")
+    format!("[{}]", parts.join(", "))
 }
 
 fn format_array_f32(shape: &[usize], values: &[f32]) -> String {
@@ -438,11 +447,15 @@ fn format_array_f32(shape: &[usize], values: &[f32]) -> String {
             format!("{} zeroinitializer", sub_type)
         } else {
             let inner = format_array_f32(sub_shape, sub_values);
-            format!("{} [{}]", sub_type, inner)
+            if sub_shape.is_empty() {
+                format!("{}", inner)
+            } else {
+                format!("{} {}", sub_type, inner)
+            }
         };
         parts.push(part);
     }
-    parts.join(", ")
+    format!("[{}]", parts.join(", "))
 }
 
 // %0 = getint <114514>

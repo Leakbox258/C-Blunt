@@ -6,7 +6,7 @@ use crate::scf::no_wrap::*;
 use crate::scf::region::Region;
 use crate::scf::value::{Type, Value};
 use crate::scf::{attr::Attr, operation::*};
-use core::{alloc, panic};
+use core::panic;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -883,10 +883,16 @@ impl Visitor for MLIRGen {
             let mut global_decl;
 
             if var_def.subscripts.is_some() {
-                global_decl = self.new_op(&Type::new_array_type(&ty, &subs), &OpType::DeclGlobal);
+                global_decl = self.new_op(
+                    &Type::new_array_type(&Type::Ptr(Box::new(ty.clone())), &subs),
+                    &OpType::DeclGlobal,
+                );
                 global_decl.set_attr(4, Attr::ArrayShape(subs)); // for lowering to llvm ir
             } else {
-                global_decl = self.new_op(&Type::new_ptr_type(&ty, &subs), &OpType::DeclGlobal);
+                global_decl = self.new_op(
+                    &Type::new_ptr_type(&Type::Ptr(Box::new(ty.clone())), &subs),
+                    &OpType::DeclGlobal,
+                );
             }
 
             global_decl
@@ -1498,14 +1504,14 @@ impl Visitor for MLIRGen {
                 return self.visit_binaryexpr(land_expr);
             } else {
                 // apply short circuit: ||
-                let mut alloc_op = self.new_op(&Type::Bool, &OpType::Alloca);
+                let mut alloc_op = self.new_op(&Type::Ptr(Box::new(Type::Bool)), &OpType::Alloca);
                 alloc_op
                     .set_attr(0, Attr::Size(4))
                     .set_attr(1, Attr::Align(4));
 
                 let lcmp_op = self.visit_binaryexpr(lhs_ast.as_ref().unwrap()).unwrap(); // bool
 
-                let mut if_else_op = self.new_op(&Type::Void, &OpType::IfElse);
+                let mut if_else_op = self.new_op(&Type::Ptr(Box::new(Type::Bool)), &OpType::IfElse);
 
                 if_else_op.add_operand(lcmp_op);
 
@@ -1563,7 +1569,7 @@ impl Visitor for MLIRGen {
                 return self.visit_binaryexpr(eq_expr);
             } else {
                 // apply short circuit: &&
-                let mut alloc_op = self.new_op(&Type::Bool, &OpType::Alloca);
+                let mut alloc_op = self.new_op(&Type::Ptr(Box::new(Type::Bool)), &OpType::Alloca);
                 alloc_op
                     .set_attr(0, Attr::Size(4))
                     .set_attr(1, Attr::Align(4));
@@ -1654,11 +1660,12 @@ impl Visitor for MLIRGen {
             ty = Type::Float32;
         }
 
-        let mut new_op = self.new_op(&ty, &self.convert_op(&ty, &op));
+        let mut new_op;
 
-        if op.is_binary() {
+        if op.is_logical() {
+            new_op = self.new_op(&Type::Bool, &self.convert_op(&ty, &op));
             new_op.add_operand(lhs_op).add_operand(rhs_op);
-        } else if op.is_logical() {
+
             match op {
                 ast::Operator::Ls => new_op.set_attr(0, Attr::Cond(CondFlag::Lt)),
                 ast::Operator::Gt => new_op.set_attr(0, Attr::Cond(CondFlag::Gt)),
@@ -1670,7 +1677,8 @@ impl Visitor for MLIRGen {
                 _ => panic!(),
             };
         } else {
-            panic!();
+            new_op = self.new_op(&ty, &self.convert_op(&ty, &op));
+            new_op.add_operand(lhs_op).add_operand(rhs_op);
         }
 
         Some(Value { def: new_op })

@@ -5,7 +5,7 @@ use crate::scf::region::Region;
 use crate::scf::value::{Type, Value};
 use crate::scf::{Parent, Print};
 use crate::visitor::visitor::Shared;
-use std::cell::{Ref, RefCell};
+use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
 macro_rules! define_methods_trait {
@@ -13,7 +13,8 @@ macro_rules! define_methods_trait {
      immutable: [$($immut_method:ident($($immut_params:ident : $immut_param_ty:ty),*) $(-> $immut_ret:ty)?),*],
      mutable: [$($mut_method:ident($($mut_params:ident : $mut_param_ty:ty),*) $(-> $mut_ret:ty)?),*],
      chaining_mutable: [$($chain_mut_method:ident($($chain_mut_params:ident : $chain_mut_param_ty:ty),*)),*],
-     borrow_immutable: [$($borrow_immut_method:ident($($borrow_immut_params:ident : $borrow_immut_param_ty:ty),*) $(-> $borrow_immut_ret:ty)?),*]) => {
+     borrow_immutable: [$($borrow_immut_method:ident($($borrow_immut_params:ident : $borrow_immut_param_ty:ty),*) $(-> $borrow_immut_ret:ty)?),*],
+     borrow_mutable: [$($borrow_mut_method:ident($($borrow_mut_params:ident : $borrow_mut_param_ty:ty),*) $(-> $borrow_mut_ret:ty)?),*]) => {
 
         pub trait $struct_methods {
             $(fn $immut_method(&self, $($immut_params : $immut_param_ty),*) $(-> $immut_ret)?;)*
@@ -23,6 +24,8 @@ macro_rules! define_methods_trait {
             $(fn $chain_mut_method(&mut self, $($chain_mut_params : $chain_mut_param_ty),*) -> &mut Self;)*
 
             $(fn $borrow_immut_method(&self, $($borrow_immut_params : $borrow_immut_param_ty),*) $(-> Ref<$borrow_immut_ret>)?;)*
+
+            $(fn $borrow_mut_method(&self, $($borrow_mut_params : $borrow_mut_param_ty),*) $(-> RefMut<$borrow_mut_ret>)?;)*
         }
 
         impl $struct_methods for Rc<RefCell<$struct_name>> {
@@ -42,6 +45,11 @@ macro_rules! define_methods_trait {
             $(fn $borrow_immut_method(&self, $($borrow_immut_params : $borrow_immut_param_ty),*) $(-> Ref<$borrow_immut_ret>)? {
                 Ref::map(self.borrow(), |inner| inner.$borrow_immut_method($($borrow_immut_params,)*))
             })*
+
+            $(fn $borrow_mut_method(&self, $($borrow_mut_params : $borrow_mut_param_ty),*) $(-> RefMut<$borrow_mut_ret>)? {
+                RefMut::map(self.borrow_mut(), |inner| inner.$borrow_mut_method($($borrow_mut_params,)*))
+            })*
+
         }
     };
 }
@@ -77,6 +85,9 @@ define_methods_trait! {
                             // get_default_block() -> Ref<Shared<Block>>,
                             get_attr_as_ref(seq : usize) -> Attr,
                             get_attrs() -> [Attr;8]
+    ],
+    borrow_mutable :        [
+
     ]
 }
 
@@ -95,8 +106,11 @@ define_methods_trait! {
     chaining_mutable :  [
 
     ],
-    borrow_immutable :     [
+    borrow_immutable :  [
                             get_blocks() -> Vec<Shared<Block>>
+    ],
+    borrow_mutable :    [
+
     ]
 }
 
@@ -119,6 +133,8 @@ define_methods_trait! {
     ],
     borrow_immutable :  [
                             get_ops() -> Vec<Shared<Operation>>
-                            // get_ops_as_mut() -> &mut Vec<Shared<Operation>>
+    ],
+    borrow_mutable :   [
+                            get_ops_as_mut() -> Vec<Shared<Operation>>
     ]
 }
