@@ -28,6 +28,7 @@ impl ToString for Value {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
+    Int8,
     Int32,
     Float32,
     Void,
@@ -81,7 +82,7 @@ impl Type {
     pub fn deref(&self) -> Type {
         match self {
             Self::Ptr(inner) => inner.as_ref().clone(),
-            _ => panic!(),
+            _ => panic!("Type::deref: expect ptr type, but find {:?}", self),
         }
     }
 
@@ -96,7 +97,9 @@ impl Type {
                     Type::Ptr(Box::new(inner_type.clone()))
                 }
             }
-            Self::Bool | Self::Int32 | Self::Int64 | Self::Float32 | Self::Ptr(_) => self.clone(),
+            Self::Bool | Self::Int8 | Self::Int32 | Self::Int64 | Self::Float32 | Self::Ptr(_) => {
+                self.clone()
+            }
             Self::Void => panic!(),
         }
     }
@@ -106,6 +109,7 @@ impl Type {
             Type::Int32 => 4,
             Type::Float32 => 4,
             Type::Int64 => 8,
+            Type::Int8 => 4, // make it ez to align
             Type::Bool => 4, // make it ez to align
             Type::Void => panic!(),
             Type::Ptr(_) => 8,
@@ -126,6 +130,7 @@ impl Type {
             Type::Float32 => 1,
             Type::Int64 => 1,
             Type::Bool => 1,
+            Type::Int8 => 1,
             Type::Void => panic!(),
             Type::Ptr(_) => 8,
             Type::Array(inner) => {
@@ -145,6 +150,7 @@ impl Type {
             Type::Float32 => Type::Float32,
             Type::Int64 => Type::Int64,
             Type::Bool => Type::Bool,
+            Type::Int8 => Type::Int8,
             Type::Void => Type::Void,
             Type::Ptr(_) => Type::Int64,
             Type::Array(inner) => {
@@ -163,11 +169,13 @@ impl ToString for Type {
     fn to_string(&self) -> String {
         match self {
             Type::Int32 => "i32".to_string(),
+            Type::Int8 => "i8".to_string(),
             Type::Int64 => "i64".to_string(),
             Type::Float32 => "float".to_string(),
             Type::Void => "void".to_string(),
             Type::Bool => "i1".to_string(),
-            Type::Ptr(ty) => format!("{}*", ty.to_string()),
+            // Type::Ptr(ty) => format!("{}*", ty.to_string()),
+            Type::Ptr(_) => "ptr".to_string(), // newer than LLVM 15.0
             Type::Array(array_type) => {
                 let (inner_type, size) = array_type.as_ref();
 

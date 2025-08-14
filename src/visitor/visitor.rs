@@ -6,7 +6,7 @@ use crate::scf::no_wrap::*;
 use crate::scf::region::Region;
 use crate::scf::value::{Type, Value};
 use crate::scf::{attr::Attr, operation::*};
-use core::panic;
+use core::{alloc, panic};
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -167,10 +167,6 @@ impl Builder {
         self.ops_stack.last().unwrap()
     }
 
-    pub fn parent_op_mut(&mut self) -> &mut Shared<Operation> {
-        self.ops_stack.last_mut().unwrap()
-    }
-
     pub fn push_op(&mut self, op: &Shared<Operation>) {
         self.ops_stack.push(Rc::clone(op));
     }
@@ -199,10 +195,6 @@ impl Builder {
     // region
     pub fn parent_region(&self) -> &Shared<Region> {
         self.regions_stack.last().unwrap()
-    }
-
-    pub fn parent_region_mut(&mut self) -> &mut Shared<Region> {
-        self.regions_stack.last_mut().unwrap()
     }
 
     pub fn push_region(&mut self, region: &Shared<Region>) {
@@ -743,10 +735,20 @@ macro_rules! fn_decl {
         $self.symbol_add(&stringify!($fn_name).to_string(), Value { def : fn_op }, &$ret);
     }};
 
+    ($self:expr, $fn_name:literal, ($($arg_name:ident : $arg_ty:expr),*)) => {{
+        let fn_op = $self.new_op(&Type::Void, &OpType::Function);
+        fn_op.borrow_mut()
+            .set_attr(0, Attr::Name(stringify!($fn_name)[1..stringify!($fn_name).len() - 1].to_string()))
+            .set_attr(1, Attr::Args(vec![$((stringify!($arg_name).to_string(), $arg_ty)),*]))
+            .set_attr(2, Attr::DeclOnly);
+        $self.symbol_add(&stringify!($fn_name).to_string(), Value { def : fn_op }, &Type::Void);
+    }};
+
 }
 
 impl Visitor for MLIRGen {
     fn visit_compunit(&mut self, compunit: &ast::CompUnit) {
+        // sylib
         fn_decl!(self, getint() => Type::Int32);
         fn_decl!(self, getch() => Type::Int32);
         fn_decl!(self, getfloat() => Type::Float32);
@@ -759,7 +761,16 @@ impl Visitor for MLIRGen {
         fn_decl!(self, getfarray(a : Type::Ptr(Box::new(Type::Float32))) => Type::Int32);
         fn_decl!(self, putarray(num : Type::Int32, a : Type::Ptr(Box::new(Type::Int32))));
         fn_decl!(self, putfarray(num : Type::Int32, a : Type::Ptr(Box::new(Type::Float32))));
-        // fn_decl!(self, memset(num))
+        // llvm builtin
+        fn_decl!(self, "llvm.memset.p0i8.i32",
+                (
+
+                    val: Type::Ptr(Box::new(Type::Int8)),
+                    fillwith: Type::Int8,
+                    size: Type::Int32,
+                    isvolatile: Type::Bool
+                )
+        );
 
         for node_decl in &compunit.decls {
             self.visit_decl(node_decl);
@@ -928,6 +939,12 @@ impl Visitor for MLIRGen {
 
                     assert!(!matches!(init_array, ast::InitVal::Simple(_)));
 
+                    let mut to_int64_op = self.new_op(&Type::Int64, &OpType::Ptr2Int);
+
+                    to_int64_op.add_operand(Value {
+                        def: Rc::clone(&alloc_op),
+                    });
+
                     let mut elem_cnt = 0;
                     for init_value in self.help_flatten_initval(bty, subs, init_array) {
                         match init_value {
@@ -939,7 +956,7 @@ impl Visitor for MLIRGen {
                                 let mut address_op = self.new_op(&Type::Int64, &OpType::LAdd);
                                 address_op
                                     .add_operand(Value {
-                                        def: Rc::clone(&alloc_op),
+                                        def: Rc::clone(&to_int64_op),
                                     })
                                     .add_operand(offset_op);
 

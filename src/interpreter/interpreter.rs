@@ -108,7 +108,10 @@ impl Interpreter {
                     continue;
                 }
 
-                body += format!("  {}", self.operation(op)).as_str();
+                match self.operation(op) {
+                    Some(op_str) => body += format!("    {}", op_str).as_str(),
+                    None => continue,
+                }
             }
         }
 
@@ -126,7 +129,7 @@ impl Interpreter {
         format!("{} {{\n{}}}\n", decl, body)
     }
 
-    pub fn operation(&self, op: &Shared<Operation>) -> String {
+    pub fn operation(&self, op: &Shared<Operation>) -> Option<String> {
         match op.get_optype() {
             OpType::Module
             | OpType::Function
@@ -151,78 +154,70 @@ impl Interpreter {
                     _ => unreachable!(),
                 };
 
-                format!(
-                    "  %{} = {} {} {} {}, {}\n",
+                Some(format!(
+                    "%{} = {} {} {} {}, {}\n",
                     op.get_id(),
                     inst,
                     cond_to_str(&op),
                     ty,
                     op_to_literal(&op.get_operand(0)),
                     op_to_literal(&op.get_operand(1))
-                )
+                ))
             }
             OpType::Branch => match get_false!(op) {
-                Some(false_label) => {
-                    format!(
-                        "  br i1 %{}, lable %{}, lable %{}\n",
-                        op.get_operand(0).def.get_id(),
-                        get_true!(op).unwrap().get_id(),
-                        false_label.get_id()
-                    )
-                }
-                None => return format!("  br label %{}\n", get_nocond!(op).unwrap().get_id()),
+                Some(false_label) => Some(format!(
+                    "br i1 %{}, lable %{}, lable %{}\n",
+                    op.get_operand(0).def.get_id(),
+                    get_true!(op).unwrap().get_id(),
+                    false_label.get_id()
+                )),
+                None => Some(format!("br label %{}\n", get_nocond!(op).unwrap().get_id())),
             },
             OpType::Return => match op.get_type() {
-                Type::Void => format!("  ret {}\n", op.get_type().to_string()),
-                _ => format!(
-                    "  ret {} {}\n",
+                Type::Void => Some(format!("ret {}\n", op.get_type().to_string())),
+                _ => Some(format!(
+                    "ret {} {}\n",
                     op.get_type().to_string(),
                     op_to_literal(&op.get_operand(0))
-                ),
+                )),
             },
             OpType::Alloca => {
-                format!(
-                    "  %{} = alloca {}, align {}\n",
+                Some(format!(
+                    "%{} = alloca {}, align {}\n",
                     op.get_id(),
-                    op_ptr_defref!(op).to_string(),
+                    op.get_type().to_string(), // op_ptr_defref!(op).to_string(),
                     get_align!(op).unwrap()
-                )
+                ))
             }
-            OpType::Store => {
-                format!(
-                    "store {} {}, {} {}, align {}\n", // ?
-                    op.get_operand(0).get_type().to_string(),
-                    op_to_literal(&op.get_operand(0)),
-                    op.get_operand(1).get_type().to_string(),
-                    op_to_literal(&op.get_operand(1)),
-                    get_align!(op).unwrap()
-                )
-            }
-            OpType::Load => {
-                format!(
-                    "  %{} = load {}, {} {}, align {}\n",
-                    op.get_id(),
-                    op.get_type().to_string(),
-                    op.get_operand(0).get_type().to_string(),
-                    op_to_literal(&op.get_operand(0)),
-                    get_align!(op).unwrap()
-                )
-            }
+            OpType::Store => Some(format!(
+                "store {} {}, {} {}, align {}\n",
+                op.get_operand(0).get_type().to_string(),
+                op_to_literal(&op.get_operand(0)),
+                op.get_operand(1).get_type().to_string(),
+                op_to_literal(&op.get_operand(1)),
+                get_align!(op).unwrap()
+            )),
+            OpType::Load => Some(format!(
+                "%{} = load {}, {} {}, align {}\n",
+                op.get_id(),
+                op.get_type().to_string(),
+                op.get_operand(0).get_type().to_string(),
+                op_to_literal(&op.get_operand(0)),
+                get_align!(op).unwrap()
+            )),
             OpType::Neg => {
-                format!(
-                    "  %{} = sub {}, 0, {}\n",
+                Some(format!(
+                    "%{} = sub {}, 0, {}\n",
                     op.get_id(),
                     op.get_operand(0).get_type().to_string(),
                     op_to_literal(&op.get_operand(0))
-                ) // expected: i32 / i64
+                )) // expected: i32 / i64
             }
-            OpType::FNeg => {
-                format!(
-                    "  %{} = fneg float {}\n",
-                    op.get_id(),
-                    op_to_literal(&op.get_operand(0))
-                )
-            }
+            OpType::FNeg => Some(format!(
+                "%{} = fneg float {}\n",
+                op.get_id(),
+                op_to_literal(&op.get_operand(0))
+            )),
             OpType::Add
             | OpType::LAdd
             | OpType::FAdd
@@ -264,66 +259,70 @@ impl Interpreter {
                     ),
                 };
 
-                format!(
-                    "  %{} = {} {}, {}, {}\n",
+                Some(format!(
+                    "%{} = {} {} {}, {}\n",
                     op.get_id(),
                     inst,
                     ty,
                     op_to_literal(&op.get_operand(0)),
                     op_to_literal(&op.get_operand(1))
-                )
+                ))
             }
-            OpType::F2I => {
-                format!(
-                    "  %{} = fptosi float {} to i32\n",
-                    op.get_id(),
-                    op_to_literal(&op.get_operand(0))
-                )
-            }
-            OpType::I2F => {
-                format!(
-                    "  %{} = sitofp i32 {} to float\n",
-                    op.get_id(),
-                    op_to_literal(&op.get_operand(0))
-                )
-            }
-            OpType::ZEXT => {
-                format!(
-                    "  %{} = zext i32 {} to i64\n",
-                    op.get_id(),
-                    op_to_literal(&op.get_operand(0))
-                )
-            }
-            OpType::SEXT => {
-                format!(
-                    "  %{} = sext i32 {} to i64\n",
-                    op.get_id(),
-                    op_to_literal(&op.get_operand(0))
-                )
-            }
-            OpType::Ptr2Int => {
-                format!(
-                    "  %{} = ptrtoint {} {} to i64\n",
-                    op.get_id(),
-                    op.get_operand(0).get_type().to_string(),
-                    op_to_literal(&op.get_operand(0))
-                )
-            }
-            OpType::Int2Ptr => {
-                format!(
-                    "  %{} = inttoptr i64 {} to {}\n",
-                    op.get_id(),
-                    op_to_literal(&op.get_operand(0)),
-                    op.get_type().to_string()
-                )
-            }
+            OpType::F2I => Some(format!(
+                "%{} = fptosi float {} to i32\n",
+                op.get_id(),
+                op_to_literal(&op.get_operand(0))
+            )),
+            OpType::I2F => Some(format!(
+                "%{} = sitofp i32 {} to float\n",
+                op.get_id(),
+                op_to_literal(&op.get_operand(0))
+            )),
+            OpType::ZEXT => Some(format!(
+                "%{} = zext i32 {} to i64\n",
+                op.get_id(),
+                op_to_literal(&op.get_operand(0))
+            )),
+            OpType::SEXT => Some(format!(
+                "%{} = sext i32 {} to i64\n",
+                op.get_id(),
+                op_to_literal(&op.get_operand(0))
+            )),
+            OpType::Ptr2Int => Some(format!(
+                "%{} = ptrtoint {} {} to i64\n",
+                op.get_id(),
+                op.get_operand(0).get_type().downgrade().to_string(),
+                op_to_literal(&op.get_operand(0))
+            )),
+            OpType::Int2Ptr => Some(format!(
+                "%{} = inttoptr i64 {} to {}\n",
+                op.get_id(),
+                op_to_literal(&op.get_operand(0)),
+                op.get_type().downgrade().to_string()
+            )),
             OpType::FuncCall => {
-                let mut str = format!(
-                    "  %{} = call {} @{}(",
-                    op.get_id(),
-                    op.get_type().to_string(),
-                    get_name!(op).unwrap()
-                );
+                if get_name!(op).unwrap() == "memset" {
+                    return Some(format!(
+                        "call void @llvm.memset.p0i8.i32(ptr align 4 {}, i8 {}, i32 {}, i1 false)\n",
+                        op_to_literal(&op.get_operand(0)),
+                        op_to_literal(&op.get_operand(1)),
+                        op_to_literal(&op.get_operand(2))
+                    ));
+                }
+
+                let mut str = match op.get_type() {
+                    Type::Void => format!(
+                        "call {} @{}(",
+                        op.get_type().to_string(),
+                        get_name!(op).unwrap()
+                    ),
+                    _ => format!(
+                        "%{} = call {} @{}(",
+                        op.get_id(),
+                        op.get_type().to_string(),
+                        get_name!(op).unwrap()
+                    ),
+                };
 
                 for (i, arg) in op.borrow().get_operands().iter().enumerate() {
                     if i > 0 {
@@ -333,7 +332,7 @@ impl Interpreter {
                 }
 
                 str += ")\n";
-                str
+                Some(str)
             }
             OpType::SetCond => todo!(),
             // OpType::SetCond => {
@@ -351,12 +350,20 @@ impl Interpreter {
             | OpType::GetArrayL
             | OpType::GetArrayF
             | OpType::GetTrue
-            | OpType::GetFalse => String::new(),
+            | OpType::GetFalse => None,
         }
     }
 }
 
 fn format_array_i32(shape: &[usize], values: &[i32]) -> String {
+    fn build_type(shape: &[usize]) -> String {
+        if shape.is_empty() {
+            "i32".to_string()
+        } else {
+            format!("[{} x {}]", shape[0], build_type(&shape[1..]))
+        }
+    }
+
     let total_size = shape.iter().product::<usize>();
     let values = if values.len() < total_size {
         let mut v = values.to_vec();
@@ -366,6 +373,10 @@ fn format_array_i32(shape: &[usize], values: &[i32]) -> String {
         values.to_vec()
     };
 
+    if values.iter().all(|&v| v == 0) && !shape.is_empty() {
+        return format!("zeroinitializer");
+    }
+
     if shape.is_empty() {
         return format!("i32 {}", values[0]);
     }
@@ -373,15 +384,7 @@ fn format_array_i32(shape: &[usize], values: &[i32]) -> String {
     let dim = shape[0];
     let sub_shape = &shape[1..];
     let sub_size = sub_shape.iter().product::<usize>();
-    let sub_type = if sub_shape.is_empty() {
-        "i32".to_string()
-    } else {
-        format!(
-            "[{} x {}]",
-            sub_shape[0],
-            format_array_i32(&sub_shape[1..], &[])
-        )
-    };
+    let sub_type = build_type(sub_shape);
 
     let mut parts = Vec::new();
     for i in 0..dim {
@@ -389,12 +392,7 @@ fn format_array_i32(shape: &[usize], values: &[i32]) -> String {
         let part = if sub_values.iter().all(|&v| v == 0) && !sub_shape.is_empty() {
             format!("{} zeroinitializer", sub_type)
         } else {
-            let inner = if sub_shape.is_empty() {
-                format!("i32 {}", sub_values[0])
-            } else {
-                let sub_parts = format_array_i32(sub_shape, sub_values);
-                sub_parts
-            };
+            let inner = format_array_i32(sub_shape, sub_values);
             format!("{} [{}]", sub_type, inner)
         };
         parts.push(part);
@@ -403,6 +401,14 @@ fn format_array_i32(shape: &[usize], values: &[i32]) -> String {
 }
 
 fn format_array_f32(shape: &[usize], values: &[f32]) -> String {
+    fn build_type(shape: &[usize]) -> String {
+        if shape.is_empty() {
+            "float".to_string()
+        } else {
+            format!("[{} x {}]", shape[0], build_type(&shape[1..]))
+        }
+    }
+
     let total_size = shape.iter().product::<usize>();
     let values = if values.len() < total_size {
         let mut v = values.to_vec();
@@ -412,6 +418,10 @@ fn format_array_f32(shape: &[usize], values: &[f32]) -> String {
         values.to_vec()
     };
 
+    if values.iter().all(|&v| v == 0.0) && !shape.is_empty() {
+        return format!("zeroinitializer");
+    }
+
     if shape.is_empty() {
         return format!("float 0X{:016X}", (values[0] as f64).to_bits());
     }
@@ -419,15 +429,7 @@ fn format_array_f32(shape: &[usize], values: &[f32]) -> String {
     let dim = shape[0];
     let sub_shape = &shape[1..];
     let sub_size = sub_shape.iter().product::<usize>();
-    let sub_type = if sub_shape.is_empty() {
-        "float".to_string()
-    } else {
-        format!(
-            "[{} x {}]",
-            sub_shape[0],
-            format_array_f32(&sub_shape[1..], &[])
-        )
-    };
+    let sub_type = build_type(sub_shape);
 
     let mut parts = Vec::new();
     for i in 0..dim {
@@ -435,12 +437,7 @@ fn format_array_f32(shape: &[usize], values: &[f32]) -> String {
         let part = if sub_values.iter().all(|&v| v == 0.0) && !sub_shape.is_empty() {
             format!("{} zeroinitializer", sub_type)
         } else {
-            let inner = if sub_shape.is_empty() {
-                format!("float 0X{:016X}", (sub_values[0] as f64).to_bits())
-            } else {
-                let sub_parts = format_array_f32(sub_shape, sub_values);
-                sub_parts
-            };
+            let inner = format_array_f32(sub_shape, sub_values);
             format!("{} [{}]", sub_type, inner)
         };
         parts.push(part);
