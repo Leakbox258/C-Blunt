@@ -81,7 +81,7 @@ impl Type {
     // use to get type pointed by this ptr type
     pub fn deref(&self) -> Type {
         match self {
-            Self::Ptr(inner) => inner.as_ref().clone(),
+            Self::Ptr(inner) => *inner.clone(),
             _ => panic!("Type::deref: expect ptr type, but find {:?}", self),
         }
     }
@@ -117,7 +117,7 @@ impl Type {
                 let (inner_type, capacity) = inner.as_ref();
 
                 match capacity {
-                    Some(cnt) => *cnt * 4 * inner_type.get_btyes(),
+                    Some(cnt) => *cnt * inner_type.get_btyes(),
                     None => inner_type.get_btyes(),
                 }
             }

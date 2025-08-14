@@ -187,7 +187,7 @@ impl Interpreter {
             OpType::Alloca => Some(format!(
                 "%{} = alloca {}, align {}\n",
                 op.get_id(),
-                op_ptr_defref!(op).to_string(),
+                op.get_type().to_string(),
                 get_align!(op).unwrap()
             )),
             OpType::Store => Some(format!(

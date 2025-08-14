@@ -883,16 +883,10 @@ impl Visitor for MLIRGen {
             let mut global_decl;
 
             if var_def.subscripts.is_some() {
-                global_decl = self.new_op(
-                    &Type::new_array_type(&Type::Ptr(Box::new(ty.clone())), &subs),
-                    &OpType::DeclGlobal,
-                );
+                global_decl = self.new_op(&Type::new_array_type(&ty, &subs), &OpType::DeclGlobal);
                 global_decl.set_attr(4, Attr::ArrayShape(subs)); // for lowering to llvm ir
             } else {
-                global_decl = self.new_op(
-                    &Type::new_ptr_type(&Type::Ptr(Box::new(ty.clone())), &subs),
-                    &OpType::DeclGlobal,
-                );
+                global_decl = self.new_op(&Type::new_ptr_type(&ty, &subs), &OpType::DeclGlobal);
             }
 
             global_decl
@@ -1722,11 +1716,10 @@ impl Visitor for MLIRGen {
                                     break;
                                 }
 
-                                let size = size.unwrap();
                                 let sub =
                                     self.visit_binaryexpr(&subs.clone().unwrap()[cnt]).unwrap();
 
-                                let get_size = self.new_int64(size as i64);
+                                let get_size = self.new_int64(inner_type.get_btyes() as i64);
 
                                 let mut lmul = self.new_op(&Type::Int64, &OpType::LMul);
                                 lmul.add_operand(sub).add_operand(get_size);
