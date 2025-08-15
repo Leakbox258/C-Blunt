@@ -98,7 +98,7 @@ impl Interpreter {
         let mut body = String::new();
 
         for block in r#fn.get_default_region().get_blocks().iter() {
-            body += format!("__{}:\n", block.get_id()).as_str();
+            body += format!("_{}:\n", block.get_id()).as_str();
             for op in block.borrow().get_ops() {
                 // handle args
                 if optype_checkif!(op, OpType::GetArg) {
@@ -166,13 +166,13 @@ impl Interpreter {
             }
             OpType::Branch => match get_false!(op) {
                 Some(false_label) => Some(format!(
-                    "br i1 %{}, label %__{}, label %__{}\n",
+                    "br i1 %{}, label %_{}, label %_{}\n",
                     op.get_operand(0).def.get_id(),
                     get_true!(op).unwrap().get_id(),
                     false_label.get_id()
                 )),
                 None => Some(format!(
-                    "br label %__{}\n",
+                    "br label %_{}\n",
                     get_nocond!(op).unwrap().get_id()
                 )),
             },
@@ -187,7 +187,7 @@ impl Interpreter {
             OpType::Alloca => Some(format!(
                 "%{} = alloca {}, align {}\n",
                 op.get_id(),
-                op.get_type().to_string(),
+                op.get_type().deref().to_string(),
                 get_align!(op).unwrap()
             )),
             OpType::Store => Some(format!(

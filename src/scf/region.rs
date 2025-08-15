@@ -32,6 +32,10 @@ impl Region {
         Rc::clone(&self.blocks[0])
     }
 
+    pub fn get_entry_block_as_mut(&mut self) -> &mut Shared<Block> {
+        &mut self.blocks[0]
+    }
+
     pub fn borrow_entry_block(&self) -> &Shared<Block> {
         &self.blocks[0]
     }

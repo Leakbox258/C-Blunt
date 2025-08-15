@@ -106,14 +106,18 @@ impl SymbolTable {
 
         // create new
         for scope in self.tables.iter().rev() {
-            let exists = { scope.borrow().table.contains_key(ident) };
+            let exists = scope.borrow().table.contains_key(ident);
             if exists {
                 scope
                     .borrow_mut()
                     .pre_const_fold
                     .insert(ident.to_string(), ast::Num::Int(new_value));
+
+                return;
             }
         }
+
+        panic!("modify_symbol_constant_i32: cant find symbol")
     }
 
     pub fn modify_symbol_constant_f32(&mut self, ident: &String, new_value: f32) {
@@ -126,14 +130,17 @@ impl SymbolTable {
 
         // create new
         for scope in self.tables.iter().rev() {
-            let exists = { scope.borrow().table.contains_key(ident) };
+            let exists = scope.borrow().table.contains_key(ident);
             if exists {
                 scope
                     .borrow_mut()
                     .pre_const_fold
                     .insert(ident.to_string(), ast::Num::Float(new_value));
+
+                return;
             }
         }
+        panic!("modify_symbol_constant_f32: cant find symbol")
     }
 
     pub fn query_symbol_constant(&self, ident: &String) -> Option<ast::Num> {
@@ -813,6 +820,7 @@ impl Visitor for MLIRGen {
             // get init attrs
 
             let decl_init_attr;
+            let const_fold;
             if var_def.init.is_none()
                 || matches!(var_def.init.as_ref().unwrap(), ast::InitVal::EmptyArray)
             {
@@ -823,6 +831,8 @@ impl Visitor for MLIRGen {
                     ast::BType::Float => decl_init_attr = Attr::FloatArray(vec![0.0; total_elems]),
                     _ => panic!(),
                 }
+
+                const_fold = None;
             } else if matches!(var_def.init.as_ref().unwrap(), ast::InitVal::Array(_)) {
                 let init_array = var_def.init.as_ref().unwrap();
 
@@ -853,6 +863,8 @@ impl Visitor for MLIRGen {
                     }
                     _ => panic!(),
                 };
+
+                const_fold = None;
             } else if let ast::InitVal::Simple(init_expr) = var_def.init.as_ref().unwrap() {
                 let num = self.visit_const_binaryexpr(init_expr).unwrap();
 
@@ -875,9 +887,10 @@ impl Visitor for MLIRGen {
                     },
                     _ => panic!(),
                 }
-                self.symbol_modify_constant(bty, ident, num);
+
+                const_fold = Some(num);
             } else {
-                panic!();
+                unreachable!();
             }
 
             let mut global_decl;
@@ -896,6 +909,10 @@ impl Visitor for MLIRGen {
                 .set_attr(3, Attr::Align(4));
 
             self.symbol_add(ident, Value { def: global_decl }, &ty);
+
+            if const_fold.is_some() {
+                self.symbol_modify_constant(bty, ident, const_fold.unwrap());
+            }
         } else {
             // 1. alloca
             let mut alloc_op;
@@ -976,9 +993,10 @@ impl Visitor for MLIRGen {
                 }
             } else {
                 let init_op;
-                if var_def.init.is_none() {
-                    init_op = self.new_int32(0);
-                } else {
+                // if var_def.init.is_none() {
+                //     init_op = self.new_int32(0);
+                // } else
+                if var_def.init.is_some() {
                     // extract expr
                     let mut last_init_array = var_def.init.as_ref().unwrap();
 
@@ -1005,13 +1023,12 @@ impl Visitor for MLIRGen {
                         }
                         _ => panic!(),
                     };
+                    self.new_op(&Type::Void, &OpType::Store)
+                        .set_attr(0, Attr::Size(4))
+                        .set_attr(1, Attr::Align(4))
+                        .add_operand(init_op)
+                        .add_operand(Value { def: alloc_op });
                 }
-
-                self.new_op(&Type::Void, &OpType::Store)
-                    .set_attr(0, Attr::Size(4))
-                    .set_attr(1, Attr::Align(4))
-                    .add_operand(init_op)
-                    .add_operand(Value { def: alloc_op });
             }
         }
     }
@@ -1348,6 +1365,10 @@ impl Visitor for MLIRGen {
             return rhs;
         }
 
+        if rhs.is_none() {
+            return None;
+        }
+
         let op = cexpr.op.as_ref().unwrap();
 
         Some(ast::apply_binary_operation(
@@ -1530,7 +1551,7 @@ impl Visitor for MLIRGen {
                 self.push_op(&if_else_op);
 
                 // then_region
-                let then_region = self.new_region();
+                let then_region = if_else_op.get_default_region();
 
                 self.push_region(&then_region);
 
@@ -1595,7 +1616,7 @@ impl Visitor for MLIRGen {
                 self.push_op(&if_else_op);
 
                 // then_region
-                let then_region = self.new_region();
+                let then_region = if_else_op.get_default_region();
 
                 self.push_region(&then_region);
 
@@ -1734,8 +1755,16 @@ impl Visitor for MLIRGen {
                                     break;
                                 }
 
-                                let sub =
+                                let mut sub =
                                     self.visit_binaryexpr(&subs.clone().unwrap()[cnt]).unwrap();
+
+                                if !optype_checkif!(sub, OpType::GetI)
+                                    && !optype_checkif!(sub, OpType::GetL)
+                                {
+                                    let mut temp = self.new_op(&Type::Int64, &OpType::ZEXT);
+                                    temp.add_operand(sub);
+                                    sub = Value { def: temp };
+                                }
 
                                 let get_size = self.new_int64(inner_type.get_btyes() as i64);
 

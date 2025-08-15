@@ -84,7 +84,8 @@ define_methods_trait! {
     borrow_immutable :     [
                             // get_default_block() -> Ref<Shared<Block>>,
                             get_attr_as_ref(seq : usize) -> Attr,
-                            get_attrs() -> [Attr;8]
+                            get_attrs() -> [Attr;8],
+                            get_regions() -> Vec<Shared<Region>>
     ],
     borrow_mutable :        [
 
@@ -110,7 +111,8 @@ define_methods_trait! {
                             get_blocks() -> Vec<Shared<Block>>
     ],
     borrow_mutable :    [
-
+                            get_blocks_as_mut() -> Vec<Shared<Block>>,
+                            get_entry_block_as_mut() -> Shared<Block>
     ]
 }
 
@@ -126,7 +128,8 @@ define_methods_trait! {
     mutable :           [
                             add_op(op : &Shared<Operation>),
                             del_op(op : &Shared<Operation>),
-                            append_ops(ops : &mut Vec<Shared<Operation>>)
+                            append_ops(ops : &mut Vec<Shared<Operation>>),
+                            replace_op(ops: Vec<Shared<Operation>>)
     ],
     chaining_mutable :  [
 

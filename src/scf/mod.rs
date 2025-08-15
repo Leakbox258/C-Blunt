@@ -314,9 +314,23 @@ pub mod r#macro {
         }};
     }
 
+    macro_rules! get_seq {
+        ($op : expr) => {{
+            let mut seq = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::ArgSeq(s) => seq = Some(s.clone()),
+                    _ => continue,
+                }
+            }
+
+            seq
+        }};
+    }
+
     pub(crate) use {
         fn_decl_only, fn_format_args, fn_name, get_align, get_cond, get_decl, get_false, get_float,
-        get_fns, get_int, get_long, get_name, get_nocond, get_true, op_ptr_defref, optype_assert,
-        optype_checkif, value_ptr_defref, value_type,
+        get_fns, get_int, get_long, get_name, get_nocond, get_seq, get_true, op_ptr_defref,
+        optype_assert, optype_checkif, value_ptr_defref, value_type,
     };
 }

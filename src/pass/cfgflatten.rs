@@ -116,10 +116,11 @@ impl CFGflatten {
 
         for op in ori_block.borrow_mut().get_ops_as_mut() {
             if optype_checkif!(op, OpType::If) {
-                flatten_blocks.append(&mut self.flat_if(op));
+                flatten_blocks.append(&mut self.flat_if(op, cond_block, body_block, exit_block));
                 continue;
             } else if optype_checkif!(op, OpType::IfElse) {
-                flatten_blocks.append(&mut self.flat_ifelse(op));
+                flatten_blocks
+                    .append(&mut self.flat_ifelse(op, cond_block, body_block, exit_block));
                 continue;
             } else if optype_checkif!(op, OpType::While) {
                 flatten_blocks.append(&mut self.flat_while(op));
@@ -162,7 +163,13 @@ impl CFGflatten {
         flatten_blocks
     }
 
-    fn flat_if(&mut self, r#if: &Shared<Operation>) -> Vec<Shared<Block>> {
+    fn flat_if(
+        &mut self,
+        r#if: &Shared<Operation>,
+        while_cond_block: Option<&Shared<Block>>,
+        while_body_block: Option<&Shared<Block>>,
+        while_exit_block: Option<&Shared<Block>>,
+    ) -> Vec<Shared<Block>> {
         let mut flatten_blocks = vec![];
 
         let cond = r#if.get_operand(0);
@@ -184,9 +191,9 @@ impl CFGflatten {
         flatten_blocks.append(&mut self.run_on_entry(
             r#if.get_region(0).get_entry_block(),
             true_block,
-            None,
-            None,
-            None,
+            while_cond_block,
+            while_body_block,
+            while_exit_block,
         ));
 
         let mut branch_op = self.new_op(&Type::Void, &OpType::Branch);
@@ -202,7 +209,13 @@ impl CFGflatten {
         flatten_blocks
     }
 
-    fn flat_ifelse(&mut self, r#if_else: &Shared<Operation>) -> Vec<Shared<Block>> {
+    fn flat_ifelse(
+        &mut self,
+        r#if_else: &Shared<Operation>,
+        while_cond_block: Option<&Shared<Block>>,
+        while_body_block: Option<&Shared<Block>>,
+        while_exit_block: Option<&Shared<Block>>,
+    ) -> Vec<Shared<Block>> {
         let mut flatten_blocks = vec![];
 
         let cond = r#if_else.get_operand(0);
@@ -225,9 +238,9 @@ impl CFGflatten {
         flatten_blocks.append(&mut self.run_on_entry(
             r#if_else.get_region(0).get_entry_block(),
             true_block,
-            None,
-            None,
-            None,
+            while_cond_block,
+            while_body_block,
+            while_exit_block,
         ));
 
         let mut branch_op = self.new_op(&Type::Void, &OpType::Branch);
@@ -297,7 +310,7 @@ impl CFGflatten {
 
         // body may not explicit use 'continue'
         self.new_op(&Type::Void, &OpType::Branch)
-            .set_attr(0, Attr::NoCond(Rc::downgrade(&body_block)));
+            .set_attr(0, Attr::NoCond(Rc::downgrade(&header_block)));
 
         self.builder.pop_block();
 

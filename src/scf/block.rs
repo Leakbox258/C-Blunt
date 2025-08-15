@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ops::RangeBounds;
 use std::rc::{Rc, Weak};
 
 use crate::scf::operation::Operation;
@@ -73,7 +74,7 @@ impl Block {
     }
 
     pub fn del_op(&mut self, op: &Shared<Operation>) {
-        self.operations.retain(|elem| elem == op);
+        self.operations.retain(|elem| elem != op);
     }
 
     pub fn append_ops(&mut self, ops: &mut Vec<Shared<Operation>>) {
@@ -86,6 +87,10 @@ impl Block {
 
     pub fn get_ops_as_mut(&mut self) -> &mut Vec<Shared<Operation>> {
         &mut self.operations
+    }
+
+    pub fn replace_op(&mut self, ops: Vec<Shared<Operation>>) {
+        self.operations = ops;
     }
 
     pub fn is_empty(&self) -> bool {

@@ -1,4 +1,4 @@
-use crate::scf::no_wrap::*;
+use crate::scf::{no_wrap::*, operation};
 use crate::{
     scf::{
         Parent, Print, SharedFromSelf,
@@ -150,6 +150,10 @@ impl Operation {
         Rc::clone(&self.regions.get(seq).unwrap())
     }
 
+    pub fn get_regions(&self) -> &Vec<Shared<Region>> {
+        &self.regions
+    }
+
     pub fn set_attr(&mut self, seq: usize, attr: Attr) -> &mut Self {
         self.attrs[seq] = attr;
         self
@@ -179,6 +183,20 @@ impl Operation {
 impl PartialEq for Operation {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
+    }
+}
+
+impl Eq for Operation {}
+
+impl PartialOrd for Operation {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.id.cmp(&other.id))
+    }
+}
+
+impl Ord for Operation {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
 
