@@ -122,8 +122,8 @@ define_methods_trait! {
     immutable :         [
                             get_id() -> u64,
                             is_empty() -> bool,
-                            print(indent : usize) -> String
-
+                            print(indent : usize) -> String,
+                            ends_with(opty : OpType) -> bool
     ],
     mutable :           [
                             add_op(op : &Shared<Operation>),

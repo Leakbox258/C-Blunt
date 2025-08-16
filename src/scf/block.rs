@@ -1,8 +1,9 @@
 use std::cell::RefCell;
-use std::ops::RangeBounds;
 use std::rc::{Rc, Weak};
 
-use crate::scf::operation::Operation;
+use crate::scf::r#macro::optype_checkif;
+use crate::scf::no_wrap::*;
+use crate::scf::operation::{OpType, Operation};
 use crate::scf::region::Region;
 use crate::scf::{Parent, Print};
 use crate::visitor::visitor::Shared;
@@ -87,6 +88,10 @@ impl Block {
 
     pub fn get_ops_as_mut(&mut self) -> &mut Vec<Shared<Operation>> {
         &mut self.operations
+    }
+
+    pub fn ends_with(&self, opty: OpType) -> bool {
+        !self.operations.is_empty() && optype_checkif!(self.operations.last().unwrap(), opty)
     }
 
     pub fn replace_op(&mut self, ops: Vec<Shared<Operation>>) {

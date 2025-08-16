@@ -64,6 +64,10 @@ impl Type {
         from_tail
     }
 
+    pub fn new_ptr_wrap_type(ty: &Type) -> Type {
+        Type::Ptr(Box::new(ty.clone()))
+    }
+
     pub fn is_array(&self) -> bool {
         match self {
             Self::Array(_) => true,
@@ -86,6 +90,13 @@ impl Type {
         }
     }
 
+    pub fn try_deref(&self) -> Type {
+        match self {
+            Self::Ptr(inner) => *inner.clone(),
+            _ => self.clone(),
+        }
+    }
+
     // dowmgrade array type to ptr type
     pub fn downgrade(&self) -> Type {
         match self {
@@ -101,6 +112,13 @@ impl Type {
                 self.clone()
             }
             Self::Void => panic!(),
+        }
+    }
+
+    pub fn get_dimension(&self) -> usize {
+        match self {
+            Type::Ptr(inner) => inner.get_dimension() + 1,
+            _ => 0,
         }
     }
 
@@ -175,7 +193,7 @@ impl ToString for Type {
             Type::Void => "void".to_string(),
             Type::Bool => "i1".to_string(),
             // Type::Ptr(ty) => format!("{}*", ty.to_string()),
-            Type::Ptr(_) => "ptr".to_string(), // newer than LLVM 15.0
+            Type::Ptr(_) => "ptr".to_string(), // llc has to be newer than LLVM 15.0
             Type::Array(array_type) => {
                 let (inner_type, size) = array_type.as_ref();
 

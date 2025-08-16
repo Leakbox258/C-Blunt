@@ -75,6 +75,10 @@ impl CFGflatten {
     fn run_on_fn(&mut self, mut func: Shared<Operation>) {
         func.set_id(self.next_id());
 
+        if is_decl_only!(func) {
+            return;
+        }
+
         self.builder.push_op(&func);
         self.builder.push_region(&func.get_default_region());
 
@@ -94,6 +98,23 @@ impl CFGflatten {
             let mut ops = block.get_ops_as_mut();
             if let Some(pos) = ops.iter().position(|op| op.get_optype() == OpType::Return) {
                 let _ = ops.split_off(pos + 1);
+            }
+        }
+
+        for block in &mut blocks {
+            if block.is_empty() {
+                if type_checkif!(func, Type::Void) {
+                    self.new_op(&Type::Void, &OpType::Return);
+                }
+            } else if !block.ends_with(OpType::Branch) && !block.ends_with(OpType::Return) {
+                if type_checkif!(func, Type::Void) {
+                    self.new_op(&Type::Void, &OpType::Return);
+                } else {
+                    panic!(
+                        "non-void function @{} may exit without a return",
+                        get_name!(func).unwrap()
+                    )
+                }
             }
         }
 

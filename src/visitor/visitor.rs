@@ -10,6 +10,7 @@ use core::panic;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::f32::consts::E;
 use std::rc::Rc;
 
 pub type Shared<T> = Rc<RefCell<T>>;
@@ -548,7 +549,7 @@ impl MLIRGen {
                 Type::Int32 => OpType::ICmp,
                 Type::Int64 => OpType::LCmp,
                 Type::Float32 => OpType::FCmp,
-                _ => panic!(),
+                _ => panic!("convert_op: unexpected ty {}", ty.to_string()),
             },
             // Ast::Operator::And => {}
             // Ast::Operator::Or => {}
@@ -581,8 +582,15 @@ impl MLIRGen {
     }
 
     fn new_int64(&mut self, int: i64) -> Value {
-        let mut new_op = self.new_op(&Type::Int32, &OpType::GetL);
+        let mut new_op = self.new_op(&Type::Int64, &OpType::GetL);
         new_op.set_attr(0, Attr::Int64(int));
+
+        Value { def: new_op }
+    }
+
+    fn new_float32(&mut self, float: f32) -> Value {
+        let mut new_op = self.new_op(&Type::Float32, &OpType::GetF);
+        new_op.set_attr(0, Attr::Float(float));
 
         Value { def: new_op }
     }
@@ -597,6 +605,24 @@ impl MLIRGen {
             optype = OpType::F2I;
         } else if matches!(dst, Type::Float32) && matches!(ori, Type::Int32) {
             optype = OpType::I2F;
+        } else if matches!(dst, Type::Int32) && matches!(ori, Type::Bool) {
+            optype = OpType::ZEXT;
+        } else if matches!(dst, Type::Bool) && matches!(ori, Type::Int32) {
+            optype = OpType::ICmp;
+        } else if matches!(dst, Type::Float32) && matches!(ori, Type::Bool) {
+            todo!()
+        } else if matches!(dst, Type::Bool) && matches!(ori, Type::Float32) {
+            optype = OpType::FCmp;
+        } else if matches!(dst, Type::Ptr(_)) && matches!(ori, Type::Ptr(_)) {
+            println!("dst: {:?}, ori: {:?}", dst, ori);
+
+            if dst.get_dimension() < ori.get_dimension() {
+                optype = OpType::Load;
+            } else if dst.get_dimension() == ori.get_dimension() {
+                return val; // from array to type
+            } else {
+                panic!();
+            }
         } else {
             panic!(
                 "new_type_convert: cant convert from {} to {}",
@@ -607,6 +633,20 @@ impl MLIRGen {
 
         let mut new_convert = self.new_op(dst, &optype);
         new_convert.add_operand(val);
+
+        if optype == OpType::ICmp {
+            new_convert
+                .add_operand(self.new_int32(0))
+                .set_attr(0, Attr::Cond(CondFlag::Ne));
+        } else if optype == OpType::FCmp {
+            new_convert
+                .add_operand(self.new_float32(0.0))
+                .set_attr(0, Attr::Cond(CondFlag::Ne));
+        } else if optype == OpType::Load {
+            new_convert
+                .set_attr(0, Attr::Size(8))
+                .set_attr(1, Attr::Align(8));
+        }
 
         Value { def: new_convert }
     }
@@ -896,7 +936,11 @@ impl Visitor for MLIRGen {
             let mut global_decl;
 
             if var_def.subscripts.is_some() {
-                global_decl = self.new_op(&Type::new_array_type(&ty, &subs), &OpType::DeclGlobal);
+                global_decl = self.new_op(
+                    // &Type::new_ptr_type(&Type::new_array_type(&ty, &subs), &subs),
+                    &Type::new_ptr_wrap_type(&Type::new_array_type(&ty, &subs)),
+                    &OpType::DeclGlobal,
+                );
                 global_decl.set_attr(4, Attr::ArrayShape(subs)); // for lowering to llvm ir
             } else {
                 global_decl = self.new_op(&Type::new_ptr_type(&ty, &subs), &OpType::DeclGlobal);
@@ -918,9 +962,12 @@ impl Visitor for MLIRGen {
             let mut alloc_op;
 
             if var_def.subscripts.is_some() {
-                alloc_op = self.new_op(&Type::new_array_type(&ty, &subs), &OpType::Alloca);
+                alloc_op = self.new_op(
+                    &Type::new_ptr_wrap_type(&Type::new_array_type(&ty, &subs)),
+                    &OpType::Alloca,
+                );
             } else {
-                alloc_op = self.new_op(&&Type::new_ptr_type(&ty, &subs), &OpType::Alloca)
+                alloc_op = self.new_op(&Type::new_ptr_type(&ty, &subs), &OpType::Alloca);
             }
 
             alloc_op
@@ -1081,7 +1128,28 @@ impl Visitor for MLIRGen {
                 let _ = self.visit_block(block);
             }
             ast::Stmt::IfElse(cond, then, or) => {
-                let cmp = self.visit_binaryexpr(cond).unwrap();
+                let mut cmp = self.visit_binaryexpr(cond).unwrap();
+
+                match cmp.get_type() {
+                    Type::Int32 => {
+                        let op_0 = self.new_int32(0);
+                        let mut icmp = self.new_op(&Type::Bool, &OpType::ICmp);
+                        icmp.add_operand(cmp)
+                            .add_operand(op_0)
+                            .set_attr(0, Attr::Cond(CondFlag::Ne));
+                        cmp = Value { def: icmp };
+                    }
+                    Type::Float32 => {
+                        let op_0 = self.new_float32(0.0);
+                        let mut fcmp = self.new_op(&Type::Bool, &OpType::FCmp);
+                        fcmp.add_operand(cmp)
+                            .add_operand(op_0)
+                            .set_attr(0, Attr::Cond(CondFlag::Ne));
+                        cmp = Value { def: fcmp };
+                    }
+                    Type::Bool => {}
+                    _ => unreachable!(),
+                }
 
                 let mut if_else_op = self.new_op(
                     &Type::Void,
@@ -1132,7 +1200,11 @@ impl Visitor for MLIRGen {
 
                 self.push_region(&header_region);
 
-                let cmp = self.visit_binaryexpr(cond).unwrap();
+                let mut cmp = self.visit_binaryexpr(cond).unwrap();
+
+                if value_type!(cmp) != Type::Bool {
+                    cmp = self.new_type_convert(&Type::Bool, &value_type!(cmp), cmp);
+                }
 
                 self.new_op(&Type::Void, &OpType::Proceed).add_operand(cmp);
 
@@ -1172,6 +1244,16 @@ impl Visitor for MLIRGen {
     fn visit_func_def(&mut self, func_def: &ast::FuncDef) -> ParseredNode {
         let mut new_func = self.new_op(&self.convert_type(&func_def.ty), &OpType::Function);
 
+        let value = Value {
+            def: Rc::clone(&new_func),
+        };
+
+        self.symbol_add(
+            &func_def.name,
+            value.clone(),
+            &self.convert_type(&func_def.ty),
+        );
+
         let default_region = new_func.get_default_region();
 
         self.push_op(&new_func);
@@ -1194,14 +1276,6 @@ impl Visitor for MLIRGen {
 
         self.pop_region();
         self.pop_op();
-
-        let value = Value { def: new_func };
-
-        self.symbol_add(
-            &func_def.name,
-            value.clone(),
-            &self.convert_type(&func_def.ty),
-        );
 
         Some(value)
     }
@@ -1233,13 +1307,16 @@ impl Visitor for MLIRGen {
             }
 
             let ty;
+            let bty;
             if sizes.is_empty() {
                 ty = self.convert_type(&format_arg.ty);
+                bty = ty.clone();
             } else {
-                // array arg downgrade as ptr arg
-                ty = self
-                    .generate_array_type(&format_arg.ty, sizes.clone())
-                    .downgrade();
+                // array -> ptr
+                ty = Type::new_ptr_wrap_type(
+                    &self.generate_array_type(&format_arg.ty, sizes.clone()),
+                );
+                bty = self.convert_type(&format_arg.ty);
             }
 
             let ident = format_arg.name.clone();
@@ -1262,7 +1339,7 @@ impl Visitor for MLIRGen {
                 .set_attr(0, Attr::Size(ty.get_btyes()))
                 .set_attr(1, Attr::Align(ty.get_btyes() as u32));
 
-            self.symbol_add(&ident, Value { def: alloc_op }, &ptr_ty);
+            self.symbol_add(&ident, Value { def: alloc_op }, &bty);
             args.push((ident, ty));
             seq += 1;
         }
@@ -1409,13 +1486,22 @@ impl Visitor for MLIRGen {
                 ast::ParenExpr::FunctionCall(call) => {
                     let func_def_op = self.symbol_qeury(&call.ident).0;
 
+                    let args_type = get_format_args!(func_def_op.def).unwrap();
+
                     let mut param_exprs = vec![];
                     if call.params.is_some() {
-                        for real_arg in call.params.as_ref().unwrap() {
-                            let arg_op = self.visit_binaryexpr(&real_arg).unwrap();
+                        for (idx, real_arg) in call.params.as_ref().unwrap().iter().enumerate() {
+                            let mut arg_op = self.visit_binaryexpr(&real_arg).unwrap();
+
+                            if value_type!(arg_op) != args_type[idx].1 {
+                                arg_op = self.new_type_convert(
+                                    &args_type[idx].1,
+                                    &value_type!(arg_op),
+                                    arg_op,
+                                )
+                            }
 
                             param_exprs.push(arg_op);
-                            // call_op.borrow_mut().add_operands(arg_op);
                         }
                     }
 
@@ -1468,55 +1554,73 @@ impl Visitor for MLIRGen {
                         let next_unary =
                             self.visit_unaryexpr(&unary.next.as_ref().unwrap()).unwrap();
 
-                        let opty;
                         match next_unary.get_type() {
                             Type::Int32 => {
-                                opty = OpType::Neg;
+                                let mut new_unary =
+                                    self.new_op(&next_unary.get_type(), &OpType::Neg);
+                                new_unary.add_operand(next_unary);
+
+                                Some(Value { def: new_unary })
                             }
                             Type::Float32 => {
-                                opty = OpType::FNeg;
+                                let mut new_unary =
+                                    self.new_op(&next_unary.get_type(), &OpType::FNeg);
+                                new_unary.add_operand(next_unary);
+
+                                Some(Value { def: new_unary })
+                            }
+                            Type::Bool => {
+                                let mut zext = self.new_op(&Type::Int32, &OpType::ZEXT);
+                                zext.add_operand(next_unary);
+
+                                let mut new_unary = self.new_op(&Type::Int32, &OpType::Neg);
+                                new_unary.add_operand(Value { def: zext });
+
+                                Some(Value { def: new_unary })
                             }
                             _ => panic!(),
-                        };
-
-                        let mut new_unary = self.new_op(&next_unary.get_type(), &opty);
-                        new_unary.add_operand(next_unary);
-
-                        Some(Value { def: new_unary })
+                        }
                     }
                     ast::Operator::Not => {
-                        let next_unary = self.visit_unaryexpr(&unary).unwrap();
+                        let next_unary =
+                            self.visit_unaryexpr(&unary.next.as_ref().unwrap()).unwrap();
 
-                        let opty;
-                        let ty;
+                        let mut cmp;
                         match next_unary.get_type() {
                             Type::Int32 => {
-                                opty = OpType::ICmp;
-                                ty = Type::Int32;
+                                cmp = self.new_op(&Type::Bool, &OpType::ICmp);
+                                cmp.add_operand(next_unary)
+                                    .add_operand(self.new_int32(0))
+                                    .set_attr(0, Attr::Cond(CondFlag::Ne));
                             }
                             Type::Float32 => {
-                                opty = OpType::FCmp;
-                                ty = Type::Float32
+                                cmp = self.new_op(&Type::Bool, &OpType::FCmp);
+                                cmp.add_operand(next_unary)
+                                    .add_operand(self.new_float32(0.0))
+                                    .set_attr(0, Attr::Cond(CondFlag::Ne));
+                            }
+                            Type::Bool => {
+                                cmp = next_unary.def;
                             }
                             _ => panic!(),
                         };
 
-                        let mut cmp = self.new_op(&Type::Bool, &opty);
-                        cmp.add_operand(next_unary);
+                        let get_true = self.new_op(&Type::Bool, &OpType::GetTrue);
 
-                        let mut xor = self.new_op(&Type::Bool, &OpType::Xor);
-                        xor.add_operand(Value { def: cmp });
+                        let mut xor = self.new_op(&Type::Bool, &OpType::BXor);
+                        xor.add_operand(Value { def: cmp })
+                            .add_operand(Value { def: get_true });
 
-                        let mut zext = self.new_op(&Type::Int32, &OpType::ZEXT);
-                        zext.add_operand(Value { def: xor });
+                        // let mut zext = self.new_op(&Type::Int32, &OpType::ZEXT);
+                        // zext.add_operand(Value { def: xor });
 
-                        if ty == Type::Float32 {
-                            let mut i2f = self.new_op(&Type::Float32, &OpType::I2F);
-                            i2f.add_operand(Value { def: zext });
-                            return Some(Value { def: i2f });
-                        }
+                        // if ty == Type::Float32 {
+                        //     let mut i2f = self.new_op(&Type::Float32, &OpType::I2F);
+                        //     i2f.add_operand(Value { def: zext });
+                        //     return Some(Value { def: i2f });
+                        // }
 
-                        Some(Value { def: zext })
+                        Some(Value { def: xor })
                     }
 
                     _ => panic!(),
@@ -1527,6 +1631,46 @@ impl Visitor for MLIRGen {
 
     // TODO: consider insert type convert operations
     fn visit_binaryexpr<T: Any>(&mut self, binary: &Rc<ast::BinaryExpr<T>>) -> ParseredNode {
+        fn type_reduce(irgen: &mut MLIRGen, lhs_op: &mut Value, rhs_op: &mut Value) -> Type {
+            if value_type!(lhs_op) == Type::Int32 && value_type!(rhs_op) == Type::Float32 {
+                *lhs_op = irgen.new_type_convert(&Type::Float32, &Type::Int32, lhs_op.clone());
+                Type::Float32
+            } else if value_type!(lhs_op) == Type::Float32 && value_type!(rhs_op) == Type::Int32 {
+                *rhs_op = irgen.new_type_convert(&Type::Float32, &Type::Int32, rhs_op.clone());
+                Type::Float32
+            } else if value_type!(lhs_op) == Type::Bool && value_type!(rhs_op) == Type::Int32 {
+                *lhs_op = irgen.new_type_convert(&Type::Int32, &Type::Bool, lhs_op.clone());
+                Type::Int32
+            } else if value_type!(lhs_op) == Type::Int32 && value_type!(rhs_op) == Type::Bool {
+                *rhs_op = irgen.new_type_convert(&Type::Int32, &Type::Bool, rhs_op.clone());
+                Type::Int32
+            } else {
+                panic!()
+            }
+        }
+
+        fn type_reduce_to_bool(irgen: &mut MLIRGen, value: &mut Value) {
+            if value_type!(value) == Type::Int32 {
+                let mut icmp = irgen.new_op(&Type::Bool, &OpType::ICmp);
+                let op_0 = irgen.new_int32(0);
+                icmp.add_operand(value.clone())
+                    .add_operand(op_0)
+                    .set_attr(0, Attr::Cond(CondFlag::Ne));
+                *value = Value { def: icmp };
+            } else if value_type!(value) == Type::Float32 {
+                let mut fcmp = irgen.new_op(&Type::Bool, &OpType::FCmp);
+                let op_0 = irgen.new_float32(0.0);
+                fcmp.add_operand(value.clone())
+                    .add_operand(op_0)
+                    .set_attr(0, Attr::Cond(CondFlag::Ne));
+                *value = Value { def: fcmp };
+            } else if value_type!(value) == Type::Bool {
+                ()
+            } else {
+                panic!()
+            }
+        }
+
         let lhs_ast = &binary.lhs;
         let rhs_ast = &binary.rhs as &dyn Any;
 
@@ -1542,7 +1686,9 @@ impl Visitor for MLIRGen {
                     .set_attr(0, Attr::Size(4))
                     .set_attr(1, Attr::Align(4));
 
-                let lcmp_op = self.visit_binaryexpr(lhs_ast.as_ref().unwrap()).unwrap(); // bool
+                let mut lcmp_op = self.visit_binaryexpr(lhs_ast.as_ref().unwrap()).unwrap();
+
+                type_reduce_to_bool(self, &mut lcmp_op); // bool
 
                 let mut if_else_op = self.new_op(&Type::Ptr(Box::new(Type::Bool)), &OpType::IfElse);
 
@@ -1572,7 +1718,9 @@ impl Visitor for MLIRGen {
 
                 self.push_region(&or_region);
 
-                let rcmp_op = self.visit_binaryexpr(land_expr).unwrap();
+                let mut rcmp_op = self.visit_binaryexpr(land_expr).unwrap();
+
+                type_reduce_to_bool(self, &mut rcmp_op);
 
                 let mut store_op = self.new_op(&Type::Void, &OpType::Store);
                 store_op
@@ -1607,7 +1755,9 @@ impl Visitor for MLIRGen {
                     .set_attr(0, Attr::Size(4))
                     .set_attr(1, Attr::Align(4));
 
-                let lcmp_op = self.visit_binaryexpr(lhs_ast.as_ref().unwrap()).unwrap(); // bool
+                let mut lcmp_op = self.visit_binaryexpr(lhs_ast.as_ref().unwrap()).unwrap();
+
+                type_reduce_to_bool(self, &mut lcmp_op); // bool
 
                 let mut if_else_op = self.new_op(&Type::Void, &OpType::IfElse);
 
@@ -1620,7 +1770,9 @@ impl Visitor for MLIRGen {
 
                 self.push_region(&then_region);
 
-                let rcmp_op = self.visit_binaryexpr(eq_expr).unwrap();
+                let mut rcmp_op = self.visit_binaryexpr(eq_expr).unwrap();
+
+                type_reduce_to_bool(self, &mut rcmp_op);
 
                 let mut store_op = self.new_op(&Type::Void, &OpType::Store);
                 store_op
@@ -1680,17 +1832,11 @@ impl Visitor for MLIRGen {
 
         let mut lhs_op = self.visit_binaryexpr(&lhs_ast.clone().unwrap()).unwrap();
         let op = binary.as_ref().op.clone().unwrap();
-        let mut ty = Type::Int32;
+        let mut ty = value_type!(lhs_op);
 
         // convert to more precise type
         if value_type!(lhs_op) != value_type!(rhs_op) {
-            if value_type!(lhs_op) == Type::Int32 {
-                lhs_op = self.new_type_convert(&Type::Float32, &Type::Int32, lhs_op);
-            } else {
-                rhs_op = self.new_type_convert(&Type::Float32, &Type::Int32, rhs_op);
-            }
-
-            ty = Type::Float32;
+            ty = type_reduce(self, &mut lhs_op, &mut rhs_op);
         }
 
         let mut new_op;
@@ -1720,23 +1866,33 @@ impl Visitor for MLIRGen {
     fn visit_lval(&mut self, lval: &ast::LVal) -> (Value, bool) {
         let ident = &lval.ident;
         let subs = &lval.subscripts;
-        let (lval_value, ty) = self.symbol_qeury(&ident);
+        let (mut lval_value, _) = self.symbol_qeury(&ident); // def_op, very-inner type
 
         if subs.is_none() {
-            if lval_value.get_optype() == OpType::GetArg {
-                (lval_value, false)
+            if lval_value.get_type().deref().is_ptr() || lval_value.get_type().deref().is_array() {
+                (lval_value, false) // use as ptr
             } else {
                 (lval_value, true)
             }
         } else {
-            // emit gep
+            let array_ty = if lval_value.get_type().deref().is_array() {
+                lval_value.get_type().deref()
+            } else {
+                // ptr deref
+                let mut ptr_def_op = self.new_op(&lval_value.get_type(), &OpType::Load);
+                ptr_def_op
+                    .add_operand(lval_value)
+                    .set_attr(0, Attr::Size(8))
+                    .set_attr(1, Attr::Align(8)); // load ptr
+                lval_value = Value { def: ptr_def_op };
 
-            let array_ty = lval_value.get_type();
+                lval_value.get_type().deref().deref()
+            };
 
+            // emit geps
             match array_ty {
                 Type::Array(_) => {
                     let mut array_type = array_ty;
-                    // let mut last_op: Value = lval_value;
                     let mut last_op = Value {
                         def: Rc::clone(
                             self.new_op(&Type::Int64, &OpType::Ptr2Int)
@@ -1744,14 +1900,22 @@ impl Visitor for MLIRGen {
                         ),
                     };
                     let mut cnt = 0;
+                    let mut ty = array_type.clone();
+                    let mut need_deref = true;
 
                     while array_type.is_array() {
                         match array_type {
                             Type::Array(ref inner) => {
                                 let inner_type = &inner.as_ref().0;
+                                ty = inner_type.clone();
                                 let size = inner.as_ref().1;
 
                                 if size.is_none() {
+                                    break;
+                                }
+
+                                if cnt >= subs.as_ref().unwrap().len() {
+                                    need_deref = false;
                                     break;
                                 }
 
@@ -1790,12 +1954,12 @@ impl Visitor for MLIRGen {
 
                     last_op = Value {
                         def: Rc::clone(
-                            self.new_op(&Type::Ptr(Box::new(ty.clone())), &OpType::Int2Ptr)
+                            self.new_op(&Type::Ptr(Box::new(ty)), &OpType::Int2Ptr)
                                 .add_operand(last_op),
                         ),
                     };
 
-                    (last_op, true)
+                    (last_op, need_deref)
                 }
                 _ => panic!("visit_lval: expect array type but find : {:?}", array_ty),
             }

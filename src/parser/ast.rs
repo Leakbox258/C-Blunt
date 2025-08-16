@@ -107,24 +107,11 @@ pub enum Operator {
 }
 
 impl Operator {
-    // pub fn is_unary(&self) -> bool {
-    //     match self {
-    //         Operator::Pos | Operator::Neg | Operator::Not => true,
-    //         _ => false,
-    //     }
-    // }
-
-    pub fn is_binary(&self) -> bool {
-        match self {
-            Operator::Add | Operator::Sub | Operator::Mul | Operator::Div | Operator::Mod => true,
-            _ => false,
-        }
-    }
-
     pub fn is_logical(&self) -> bool {
         match self {
             Operator::Ls
             | Operator::Gt
+            | Operator::Ge
             | Operator::Le
             | Operator::Eq
             | Operator::Ne

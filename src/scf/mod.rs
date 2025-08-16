@@ -41,6 +41,12 @@ pub mod r#macro {
         };
     }
 
+    macro_rules! type_checkif {
+        ($operation : expr, $type : expr) => {
+            $operation.get_type() == $type
+        };
+    }
+
     macro_rules! op_ptr_defref {
         ($op : expr) => {{
             let optype = $op.get_optype();
@@ -77,37 +83,7 @@ pub mod r#macro {
     }
 
     macro_rules! value_type {
-        ($op : expr) => {{
-            let optype = $op.def.get_optype();
-            match optype {
-                OpType::ICmp
-                | OpType::FCmp
-                | OpType::Neg
-                | OpType::FNeg
-                | OpType::Add
-                | OpType::LAdd
-                | OpType::FAdd
-                | OpType::Sub
-                | OpType::LSub
-                | OpType::FSub
-                | OpType::Mul
-                | OpType::LMul
-                | OpType::FMul
-                | OpType::Div
-                | OpType::LDiv
-                | OpType::FDiv
-                | OpType::Mod
-                | OpType::LMod
-                | OpType::FMod
-                | OpType::Load
-                | OpType::FuncCall
-                | OpType::GetI
-                | OpType::GetL
-                | OpType::GetF
-                | OpType::GetArg => $op.get_type(),
-                _ => panic!("value_type!: get unexpected op {}", optype.to_string()),
-            }
-        }};
+        ($op : expr) => {{ $op.get_type() }};
     }
 
     macro_rules! get_fns {
@@ -328,9 +304,37 @@ pub mod r#macro {
         }};
     }
 
+    macro_rules! get_format_args {
+        ($op : expr) => {{
+            let mut args = None;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::Args(v) => args = Some(v.clone()),
+                    _ => continue,
+                }
+            }
+
+            args
+        }};
+    }
+
+    macro_rules! is_decl_only {
+        ($op : expr) => {{
+            let mut decl_only = false;
+            for attr in $op.borrow().get_attrs() {
+                match attr {
+                    Attr::DeclOnly => decl_only = true,
+                    _ => continue,
+                }
+            }
+            decl_only
+        }};
+    }
+
     pub(crate) use {
         fn_decl_only, fn_format_args, fn_name, get_align, get_cond, get_decl, get_false, get_float,
-        get_fns, get_int, get_long, get_name, get_nocond, get_seq, get_true, op_ptr_defref,
-        optype_assert, optype_checkif, value_ptr_defref, value_type,
+        get_fns, get_format_args, get_int, get_long, get_name, get_nocond, get_seq, get_true,
+        is_decl_only, op_ptr_defref, optype_assert, optype_checkif, type_checkif, value_ptr_defref,
+        value_type,
     };
 }

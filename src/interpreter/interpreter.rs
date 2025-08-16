@@ -98,7 +98,7 @@ impl Interpreter {
         let mut body = String::new();
 
         for block in r#fn.get_default_region().get_blocks().iter() {
-            body += format!("_{}:\n", block.get_id()).as_str();
+            let mut scope = format!("_{}:\n", block.get_id());
             for op in block.borrow().get_ops() {
                 // handle args
                 if optype_checkif!(op, OpType::GetArg) {
@@ -109,9 +109,14 @@ impl Interpreter {
                 }
 
                 match self.operation(op) {
-                    Some(op_str) => body += format!("    {}", op_str).as_str(),
+                    Some(op_str) => scope += format!("    {}", op_str).as_str(),
                     None => continue,
                 }
+            }
+
+            // check empty
+            if !scope.ends_with(":\n") {
+                body += scope.as_str();
             }
         }
 
@@ -187,7 +192,11 @@ impl Interpreter {
             OpType::Alloca => Some(format!(
                 "%{} = alloca {}, align {}\n",
                 op.get_id(),
+                // if op.get_type().is_ptr() {
                 op.get_type().deref().to_string(),
+                // } else {
+                //     op.get_type().to_string() // array
+                // },
                 get_align!(op).unwrap()
             )),
             OpType::Store => Some(format!(
@@ -234,6 +243,7 @@ impl Interpreter {
             | OpType::Mod
             | OpType::LMod
             | OpType::FMod
+            | OpType::BXor
             | OpType::Xor
             | OpType::LXor => {
                 let (inst, ty) = match op.get_optype() {
@@ -252,6 +262,7 @@ impl Interpreter {
                     OpType::Mod => ("srem", "i32"),
                     OpType::LMod => ("srem", "i64"),
                     OpType::FMod => ("frem", "float"),
+                    OpType::BXor => ("xor", "i1"),
                     OpType::Xor => ("xor", "i32"),
                     OpType::LXor => ("lxor", "i64"),
                     _ => unreachable!(
@@ -280,14 +291,18 @@ impl Interpreter {
                 op_to_literal(&op.get_operand(0))
             )),
             OpType::ZEXT => Some(format!(
-                "%{} = zext i32 {} to i64\n",
+                "%{} = zext {} {} to {}\n",
                 op.get_id(),
-                op_to_literal(&op.get_operand(0))
+                op.get_operand(0).get_type().to_string(), // ori type
+                op_to_literal(&op.get_operand(0)),
+                op.get_type().to_string(), // dst type
             )),
             OpType::SEXT => Some(format!(
-                "%{} = sext i32 {} to i64\n",
+                "%{} = sext {} {} to {}\n",
                 op.get_id(),
-                op_to_literal(&op.get_operand(0))
+                op.get_operand(0).get_type().to_string(), // ori type
+                op_to_literal(&op.get_operand(0)),
+                op.get_type().to_string(), // dst type
             )),
             OpType::Ptr2Int => Some(format!(
                 "%{} = ptrtoint {} {} to i64\n",

@@ -121,6 +121,7 @@ FuncFParam : FuncFParam = {
 }
 
 Block : Block = {
+    "{}" => { Block{items : None} },
     "{" <block_items : BlockItem*> "}" => {
         match block_items.len() {
             0 => Block{items : None},
@@ -134,25 +135,32 @@ BlockItem : BlockItem = {
     <st : Stmt> => BlockItem::Statement(st),
 }
 
-Stmt : Stmt = {
-    #[precedence(level="0")]
-    <lval : LVal> "=" <e : Exp> ";" => Stmt::Assign (lval, e),
+Stmt: Stmt = {
+    ClosedStmt,
+    OpenStmt,
+};
+
+ClosedStmt: Stmt = {
+    <lval: LVal> "=" <e: Exp> ";" => Stmt::Assign(lval, e),
     <e: Exp> ";" => Stmt::Expression(e),
     ";" => Stmt::NULL,
-    #[precedence(level="0")]
-    <blk : Block> => Stmt::Block(blk),
-    #[precedence(level="1")]
-    If "(" <c : Cond> ")" <then : Stmt> => Stmt::IfElse(c, Box::new(then), None),
-    #[precedence(level="0")]
-    If "(" <c : Cond> ")" <then : Stmt> Else <el : Stmt> => Stmt::IfElse (c, Box::new(then), Some(Box::new(el))),
-    While "(" <c : Cond> ")" <then : Stmt> => Stmt::While(c, Box::new(then)),
-    #[precedence(level="0")]
-    Break ";" => Stmt::Break,
-    #[precedence(level="0")]
-    Continue ";" => Stmt::Continue,
-    #[precedence(level="0")]
-    Return <e : Exp?> ";" => Stmt::Return(e)
-}
+    <blk: Block> => Stmt::Block(blk),
+    "while" "(" <c: Cond> ")" <then: ClosedStmt> => Stmt::While(c, Box::new(then)),
+    "break" ";" => Stmt::Break,
+    "continue" ";" => Stmt::Continue,
+    "return" <e: Exp?> ";" => Stmt::Return(e),
+    
+    "if" "(" <c: Cond> ")" <then: ClosedStmt> "else" <el: ClosedStmt> 
+        => Stmt::IfElse(c, Box::new(then), Some(Box::new(el))),
+};
+
+OpenStmt: Stmt = {
+    "if" "(" <c: Cond> ")" <then: Stmt> 
+        => Stmt::IfElse(c, Box::new(then), None),
+    
+    "if" "(" <c: Cond> ")" <then: ClosedStmt> "else" <el: OpenStmt> 
+        => Stmt::IfElse(c, Box::new(then), Some(Box::new(el))),
+};
 
 Exp : Rc<Expr> = {
     <addexpr : AddExp> => addexpr

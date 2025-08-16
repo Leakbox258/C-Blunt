@@ -304,6 +304,7 @@ pub enum OpType {
     LMod,
     FMod,
     // bitwise
+    BXor, // bit
     Xor,
     LXor,
     // convert
@@ -365,6 +366,7 @@ impl fmt::Display for OpType {
             Self::Mod => write!(f, "mod"),
             Self::LMod => write!(f, "lmod"),
             Self::FMod => write!(f, "fmod"),
+            Self::BXor => write!(f, "bxor"),
             Self::Xor => write!(f, "xor"),
             Self::LXor => write!(f, "lxor"),
             Self::F2I => write!(f, "f2i"),
