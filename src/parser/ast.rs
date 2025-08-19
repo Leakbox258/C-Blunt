@@ -1,3 +1,4 @@
+use core::panic;
 use std::{ops::Add, ops::Div, ops::Mul, ops::Rem, ops::Sub, rc::Rc};
 
 #[derive(Debug)]
@@ -96,7 +97,7 @@ pub enum Operator {
     Div,
     Mod,
     // Logical
-    Ls,
+    Lt,
     Gt,
     Le,
     Ge,
@@ -109,7 +110,7 @@ pub enum Operator {
 impl Operator {
     pub fn is_logical(&self) -> bool {
         match self {
-            Operator::Ls
+            Operator::Lt
             | Operator::Gt
             | Operator::Ge
             | Operator::Le
@@ -129,24 +130,46 @@ pub enum PrimaryExpr {
     Number(Num),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum Num {
     Int(i32),
     Float(f32),
 }
 
 impl Num {
-    pub fn as_int(&self) -> Option<i32> {
+    pub fn get_int(&self) -> Option<i32> {
         match self {
             Num::Int(v) => Some(*v),
             _ => None,
         }
     }
 
-    pub fn as_float(&self) -> Option<f32> {
+    pub fn get_float(&self) -> Option<f32> {
         match self {
             Num::Float(v) => Some(*v),
             _ => None,
+        }
+    }
+
+    pub fn reduce(lhs: &Num, rhs: &Num) -> (Num, Num) {
+        if Num::same_ty(lhs, rhs) {
+            (*lhs, *rhs)
+        } else {
+            if lhs.get_int().is_some() {
+                (Num::Float(lhs.get_int().unwrap() as f32), *rhs)
+            } else {
+                (*lhs, Num::Float(rhs.get_int().unwrap() as f32))
+            }
+        }
+    }
+
+    pub fn same_ty(lhs: &Num, rhs: &Num) -> bool {
+        if matches!(lhs, Num::Int(_)) && matches!(rhs, Num::Int(_)) {
+            true
+        } else if matches!(lhs, Num::Float(_)) && matches!(rhs, Num::Float(_)) {
+            true
+        } else {
+            false
         }
     }
 }
@@ -167,22 +190,75 @@ macro_rules! impl_binary_op {
     };
 }
 
-// Implement the binary operations using the macro
 impl_binary_op!(Add, add, +);
 impl_binary_op!(Sub, sub, -);
 impl_binary_op!(Mul, mul, *);
 impl_binary_op!(Div, div, /);
-impl_binary_op!(Rem, rem, %); // For modulus
+impl_binary_op!(Rem, rem, %);
+
+macro_rules! impl_logical_op {
+    ($num1 : expr, $num2 : expr, $op : tt) => {{}};
+}
 
 // Optimized function to perform the operation
-pub fn apply_binary_operation(lhs: &Num, rhs: &Num, op: &Operator) -> Num {
+pub fn apply_operation(lhs: &Num, rhs: &Num, op: &Operator) -> Num {
     match op {
         Operator::Add => lhs + rhs,
         Operator::Sub => lhs - rhs,
         Operator::Mul => lhs * rhs,
         Operator::Div => lhs / rhs,
         Operator::Mod => lhs % rhs,
-        _ => panic!("Unsupported operator"),
+        Operator::Eq => {
+            let (lhs, rhs) = Num::reduce(lhs, rhs);
+
+            if lhs == rhs { Num::Int(1) } else { Num::Int(0) }
+        }
+        Operator::Ne => {
+            let (lhs, rhs) = Num::reduce(lhs, rhs);
+
+            if lhs != rhs { Num::Int(1) } else { Num::Int(0) }
+        }
+        Operator::Gt => {
+            let (lhs, rhs) = Num::reduce(lhs, rhs);
+
+            if lhs > rhs { Num::Int(1) } else { Num::Int(0) }
+        }
+        Operator::Ge => {
+            let (lhs, rhs) = Num::reduce(lhs, rhs);
+
+            if lhs >= rhs { Num::Int(1) } else { Num::Int(0) }
+        }
+        Operator::Lt => {
+            let (lhs, rhs) = Num::reduce(lhs, rhs);
+
+            if lhs < rhs { Num::Int(1) } else { Num::Int(0) }
+        }
+        Operator::Le => {
+            let (lhs, rhs) = Num::reduce(lhs, rhs);
+
+            if lhs <= rhs { Num::Int(1) } else { Num::Int(0) }
+        }
+        Operator::And => {
+            let (lhs, zero_1) = Num::reduce(lhs, &Num::Int(0));
+            let (zero_2, rhs) = Num::reduce(&Num::Int(0), rhs);
+
+            if lhs != zero_1 && zero_2 != rhs {
+                Num::Int(1)
+            } else {
+                Num::Int(0)
+            }
+        }
+        Operator::Or => {
+            let (lhs, zero_1) = Num::reduce(lhs, &Num::Int(0));
+            let (zero_2, rhs) = Num::reduce(&Num::Int(0), rhs);
+
+            if lhs != zero_1 || zero_2 != rhs {
+                Num::Int(1)
+            } else {
+                Num::Int(0)
+            }
+        }
+        _ => panic!(),
     }
 }
 

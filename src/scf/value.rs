@@ -35,16 +35,17 @@ pub enum Type {
     Int64,
     Bool,
     Ptr(Box<Type>),
-    Array(Box<(Type, Option<usize>)>),
+    Array(Box<(Type, usize)>),
 }
 
 impl Type {
     pub fn new_array_type(ty: &Type, subscripts: &Vec<usize>) -> Type {
         assert!(subscripts.len() > 0 && subscripts[0] != 0);
 
-        let mut from_tail = Type::Array(Box::new((ty.clone(), None)));
+        // let mut from_tail = Type::Array(Box::new((ty.clone(), None)));
+        let mut from_tail = ty.clone();
         for sub in subscripts.iter().rev() {
-            from_tail = Type::Array(Box::new((from_tail, Some(*sub))));
+            from_tail = Type::Array(Box::new((from_tail, *sub)));
         }
 
         from_tail
@@ -101,12 +102,8 @@ impl Type {
     pub fn downgrade(&self) -> Type {
         match self {
             Self::Array(inner_ty) => {
-                let (inner_type, capacity) = inner_ty.as_ref();
-                if capacity.is_some() {
-                    inner_type.downgrade()
-                } else {
-                    Type::Ptr(Box::new(inner_type.clone()))
-                }
+                let (inner_type, _) = inner_ty.as_ref();
+                Type::Ptr(Box::new(inner_type.downgrade()))
             }
             Self::Bool | Self::Int8 | Self::Int32 | Self::Int64 | Self::Float32 | Self::Ptr(_) => {
                 self.clone()
@@ -133,11 +130,7 @@ impl Type {
             Type::Ptr(_) => 8,
             Type::Array(inner) => {
                 let (inner_type, capacity) = inner.as_ref();
-
-                match capacity {
-                    Some(cnt) => *cnt * inner_type.get_btyes(),
-                    None => inner_type.get_btyes(),
-                }
+                *capacity * inner_type.get_btyes()
             }
         }
     }
@@ -154,10 +147,7 @@ impl Type {
             Type::Array(inner) => {
                 let (inner_type, capacity) = inner.as_ref();
 
-                match capacity {
-                    Some(cnt) => *cnt * inner_type.get_size(),
-                    None => inner_type.get_size(),
-                }
+                *capacity * inner_type.get_size()
             }
         }
     }
@@ -172,12 +162,8 @@ impl Type {
             Type::Void => Type::Void,
             Type::Ptr(_) => Type::Int64,
             Type::Array(inner) => {
-                let (inner_type, capacity) = inner.as_ref();
-
-                match capacity {
-                    Some(_) => inner_type.get_basic_type(),
-                    None => inner_type.clone(),
-                }
+                let (inner_type, _) = inner.as_ref();
+                inner_type.get_basic_type()
             }
         }
     }
@@ -197,10 +183,7 @@ impl ToString for Type {
             Type::Array(array_type) => {
                 let (inner_type, size) = array_type.as_ref();
 
-                match size {
-                    Some(elem_size) => format!("[{} x {}]", elem_size, inner_type.to_string()),
-                    None => inner_type.to_string(),
-                }
+                format!("[{} x {}]", size, inner_type.to_string())
             }
         }
     }

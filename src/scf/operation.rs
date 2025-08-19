@@ -269,6 +269,7 @@ pub enum OpType {
     If,
     IfElse,
     While,
+    Loop,
     // cond
     ICmp,
     LCmp,
@@ -337,6 +338,7 @@ impl fmt::Display for OpType {
             Self::If => write!(f, "if"),
             Self::IfElse => write!(f, "if_else"),
             Self::While => write!(f, "while"),
+            Self::Loop => write!(f, "loop"),
             Self::ICmp => write!(f, "icmp"),
             Self::LCmp => write!(f, "lcmp"),
             Self::FCmp => write!(f, "fcmp"),

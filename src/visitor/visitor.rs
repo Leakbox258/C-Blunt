@@ -10,7 +10,6 @@ use core::panic;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::f32::consts::E;
 use std::rc::Rc;
 
 pub type Shared<T> = Rc<RefCell<T>>;
@@ -540,7 +539,7 @@ impl MLIRGen {
                 _ => panic!(),
             },
             // need to set attr
-            ast::Operator::Ls
+            ast::Operator::Lt
             | ast::Operator::Gt
             | ast::Operator::Le
             | ast::Operator::Ge
@@ -559,12 +558,18 @@ impl MLIRGen {
 
     fn generate_array_type(&self, oty: &ast::BType, mut sub_defs: Vec<usize>) -> Type {
         if sub_defs.is_empty() {
-            Type::Array(Box::new((self.convert_type(oty), None)))
+            // Type::Array(Box::new((self.convert_type(oty), None)))
+            self.convert_type(oty)
         } else {
             let size = sub_defs.remove(0);
-            let inner_type = self.generate_array_type(oty, sub_defs);
-
-            Type::Array(Box::new((inner_type, Some(size))))
+            if size != i32::MAX.try_into().unwrap() {
+                let inner_type = self.generate_array_type(oty, sub_defs);
+                Type::Array(Box::new((inner_type, size)))
+            } else {
+                // deduce type trait as ptr
+                let inner_type = self.generate_array_type(oty, sub_defs);
+                Type::Ptr(Box::new(inner_type))
+            }
         }
     }
 
@@ -847,7 +852,7 @@ impl Visitor for MLIRGen {
             subs.push(
                 self.visit_const_binaryexpr(&decl_size)
                     .unwrap()
-                    .as_int()
+                    .get_int()
                     .unwrap()
                     .try_into()
                     .unwrap(),
@@ -1121,7 +1126,7 @@ impl Visitor for MLIRGen {
                 // try pre-constfolding
 
                 if let Some(new_i32) = self.visit_const_binaryexpr(expr) {
-                    self.symbol_modify_constant_i32(&lval.ident, new_i32.as_int().unwrap());
+                    self.symbol_modify_constant_i32(&lval.ident, new_i32.get_int().unwrap());
                 }
             }
             ast::Stmt::Block(block) => {
@@ -1191,6 +1196,8 @@ impl Visitor for MLIRGen {
                 self.pop_op();
             }
             ast::Stmt::While(cond, body) => {
+                // TODO: While -> Loop
+
                 let while_op = self.new_op(&Type::Void, &OpType::While);
 
                 self.push_op(&while_op);
@@ -1299,7 +1306,7 @@ impl Visitor for MLIRGen {
                         sizes.push(
                             self.visit_const_binaryexpr(cexpr)
                                 .unwrap()
-                                .as_int()
+                                .get_int()
                                 .unwrap() as usize,
                         );
                     }
@@ -1313,9 +1320,7 @@ impl Visitor for MLIRGen {
                 bty = ty.clone();
             } else {
                 // array -> ptr
-                ty = Type::new_ptr_wrap_type(
-                    &self.generate_array_type(&format_arg.ty, sizes.clone()),
-                );
+                ty = self.generate_array_type(&format_arg.ty, sizes.clone());
                 bty = self.convert_type(&format_arg.ty);
             }
 
@@ -1324,7 +1329,7 @@ impl Visitor for MLIRGen {
             let mut getarg_op = self.new_op(&ty, &OpType::GetArg);
             getarg_op.set_attr(0, Attr::ArgSeq(seq));
 
-            let ptr_ty = Type::new_ptr_type(&ty, &sizes);
+            let ptr_ty = Type::new_ptr_wrap_type(&ty);
             let mut alloc_op = self.new_op(&ptr_ty, &OpType::Alloca);
             alloc_op
                 .set_attr(0, Attr::Size(ty.get_btyes()))
@@ -1448,7 +1453,7 @@ impl Visitor for MLIRGen {
 
         let op = cexpr.op.as_ref().unwrap();
 
-        Some(ast::apply_binary_operation(
+        Some(ast::apply_operation(
             lhs.as_ref().unwrap(),
             rhs.as_ref().unwrap(),
             op,
@@ -1846,7 +1851,7 @@ impl Visitor for MLIRGen {
             new_op.add_operand(lhs_op).add_operand(rhs_op);
 
             match op {
-                ast::Operator::Ls => new_op.set_attr(0, Attr::Cond(CondFlag::Lt)),
+                ast::Operator::Lt => new_op.set_attr(0, Attr::Cond(CondFlag::Lt)),
                 ast::Operator::Gt => new_op.set_attr(0, Attr::Cond(CondFlag::Gt)),
                 ast::Operator::Ge => new_op.set_attr(0, Attr::Cond(CondFlag::Ge)),
                 ast::Operator::Eq => new_op.set_attr(0, Attr::Cond(CondFlag::Eq)),
@@ -1866,8 +1871,7 @@ impl Visitor for MLIRGen {
     fn visit_lval(&mut self, lval: &ast::LVal) -> (Value, bool) {
         let ident = &lval.ident;
         let subs = &lval.subscripts;
-        let (mut lval_value, _) = self.symbol_qeury(&ident); // def_op, very-inner type
-
+        let (lval_value, _) = self.symbol_qeury(&ident);
         if subs.is_none() {
             if lval_value.get_type().deref().is_ptr() || lval_value.get_type().deref().is_array() {
                 (lval_value, false) // use as ptr
@@ -1875,94 +1879,80 @@ impl Visitor for MLIRGen {
                 (lval_value, true)
             }
         } else {
-            let array_ty = if lval_value.get_type().deref().is_array() {
-                lval_value.get_type().deref()
-            } else {
-                // ptr deref
-                let mut ptr_def_op = self.new_op(&lval_value.get_type(), &OpType::Load);
-                ptr_def_op
-                    .add_operand(lval_value)
-                    .set_attr(0, Attr::Size(8))
-                    .set_attr(1, Attr::Align(8)); // load ptr
-                lval_value = Value { def: ptr_def_op };
+            // extract array type
+            let address_type = lval_value.get_type().deref();
 
-                lval_value.get_type().deref().deref()
+            // TODO : check more
+
+            println!("address_type: {:?}", address_type);
+
+            // gep ptr 0, 0
+            let mut ptr2int = self.new_op(&Type::Int64, &OpType::Ptr2Int);
+            ptr2int.add_operand(lval_value);
+
+            let mut last_op = Value { def: ptr2int };
+
+            let mut r#type = address_type;
+            let mut cnt = 0;
+            let mut use_as_ptr = false;
+
+            while r#type.is_ptr() || r#type.is_array() {
+                // handle subscripts
+
+                if cnt >= subs.clone().unwrap().len() {
+                    println!(
+                        "log: expect {}, but subs have only {}",
+                        cnt,
+                        subs.clone().unwrap().len()
+                    );
+                    use_as_ptr = true;
+                    break;
+                }
+
+                let mut sub = self.visit_binaryexpr(&subs.clone().unwrap()[cnt]).unwrap();
+
+                if !optype_checkif!(sub, OpType::GetI) && !optype_checkif!(sub, OpType::GetL) {
+                    let mut temp = self.new_op(&Type::Int64, &OpType::ZEXT);
+                    temp.add_operand(sub);
+                    sub = Value { def: temp };
+                }
+
+                // extract inner type
+                match r#type {
+                    Type::Array(inner) => {
+                        r#type = inner.as_ref().0.clone();
+                    }
+                    Type::Ptr(inner) => {
+                        r#type = inner.as_ref().clone();
+                    }
+                    _ => panic!(
+                        "visit_lval: expect array or ptr type but find : {:?}",
+                        r#type
+                    ),
+                }
+
+                // gep
+                let get_size = self.new_int64(r#type.get_btyes() as i64);
+
+                let mut lmul = self.new_op(&Type::Int64, &OpType::LMul);
+                lmul.add_operand(sub).add_operand(get_size);
+
+                let mut ladd = self.new_op(&r#type, &OpType::LAdd);
+                ladd.add_operand(Value { def: lmul }).add_operand(last_op);
+
+                last_op = Value { def: ladd };
+
+                cnt += 1;
+            }
+
+            last_op = Value {
+                def: Rc::clone(
+                    self.new_op(&Type::Ptr(Box::new(r#type)), &OpType::Int2Ptr)
+                        .add_operand(last_op),
+                ),
             };
 
-            // emit geps
-            match array_ty {
-                Type::Array(_) => {
-                    let mut array_type = array_ty;
-                    let mut last_op = Value {
-                        def: Rc::clone(
-                            self.new_op(&Type::Int64, &OpType::Ptr2Int)
-                                .add_operand(lval_value),
-                        ),
-                    };
-                    let mut cnt = 0;
-                    let mut ty = array_type.clone();
-                    let mut need_deref = true;
-
-                    while array_type.is_array() {
-                        match array_type {
-                            Type::Array(ref inner) => {
-                                let inner_type = &inner.as_ref().0;
-                                ty = inner_type.clone();
-                                let size = inner.as_ref().1;
-
-                                if size.is_none() {
-                                    break;
-                                }
-
-                                if cnt >= subs.as_ref().unwrap().len() {
-                                    need_deref = false;
-                                    break;
-                                }
-
-                                let mut sub =
-                                    self.visit_binaryexpr(&subs.clone().unwrap()[cnt]).unwrap();
-
-                                if !optype_checkif!(sub, OpType::GetI)
-                                    && !optype_checkif!(sub, OpType::GetL)
-                                {
-                                    let mut temp = self.new_op(&Type::Int64, &OpType::ZEXT);
-                                    temp.add_operand(sub);
-                                    sub = Value { def: temp };
-                                }
-
-                                let get_size = self.new_int64(inner_type.get_btyes() as i64);
-
-                                let mut lmul = self.new_op(&Type::Int64, &OpType::LMul);
-                                lmul.add_operand(sub).add_operand(get_size);
-
-                                let mut ladd = self.new_op(&inner_type, &OpType::LAdd);
-                                ladd.add_operand(Value { def: lmul }).add_operand(last_op);
-
-                                // let mut int2ptr =
-                                //     self.new_op(&Type::Ptr(Box::new(ty.clone())), &OpType::Int2Ptr);
-                                // int2ptr.add_operand(Value { def: ladd });
-
-                                last_op = Value { def: ladd };
-
-                                array_type = inner_type.clone();
-
-                                cnt += 1;
-                            }
-                            _ => panic!(),
-                        }
-                    }
-
-                    last_op = Value {
-                        def: Rc::clone(
-                            self.new_op(&Type::Ptr(Box::new(ty)), &OpType::Int2Ptr)
-                                .add_operand(last_op),
-                        ),
-                    };
-
-                    (last_op, need_deref)
-                }
-                _ => panic!("visit_lval: expect array type but find : {:?}", array_ty),
-            }
+            (last_op, !use_as_ptr)
         }
     }
 }

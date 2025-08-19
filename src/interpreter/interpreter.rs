@@ -141,6 +141,7 @@ impl Interpreter {
             | OpType::If
             | OpType::IfElse
             | OpType::While
+            | OpType::Loop
             | OpType::Proceed
             | OpType::Break
             | OpType::Continue

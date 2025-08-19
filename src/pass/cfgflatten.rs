@@ -106,6 +106,12 @@ impl CFGflatten {
                 if type_checkif!(func, Type::Void) {
                     self.new_op(&Type::Void, &OpType::Return);
                 }
+                // else {
+                //     panic!(
+                //         "non-void function @{} may exit without a return",
+                //         get_name!(func).unwrap()
+                //     )
+                // }
             } else if !block.ends_with(OpType::Branch) && !block.ends_with(OpType::Return) {
                 if type_checkif!(func, Type::Void) {
                     self.new_op(&Type::Void, &OpType::Return);
@@ -145,6 +151,9 @@ impl CFGflatten {
                 continue;
             } else if optype_checkif!(op, OpType::While) {
                 flatten_blocks.append(&mut self.flat_while(op));
+                continue;
+            } else if optype_checkif!(op, OpType::Loop) {
+                flatten_blocks.append(&mut self.flat_loop(op));
                 continue;
             } else if optype_checkif!(op, OpType::Proceed) {
                 assert!(cond_block.is_some() && body_block.is_some() && exit_block.is_some());
@@ -276,9 +285,9 @@ impl CFGflatten {
         flatten_blocks.append(&mut self.run_on_entry(
             r#if_else.get_region(1).get_entry_block(),
             false_block,
-            None,
-            None,
-            None,
+            while_cond_block,
+            while_body_block,
+            while_exit_block,
         ));
 
         let mut branch_op = self.new_op(&Type::Void, &OpType::Branch);
@@ -290,6 +299,32 @@ impl CFGflatten {
 
         self.builder.push_block(&exit_block);
         flatten_blocks.push(Rc::clone(&exit_block));
+
+        flatten_blocks
+    }
+
+    fn flat_loop(&mut self, r#loop: &Shared<Operation>) -> Vec<Shared<Block>> {
+        let mut flatten_blocks = vec![];
+
+        let body_block = self.new_block();
+        let exit_block = self.new_block();
+
+        // already branch at the end of body block
+        self.builder.push_block(&body_block);
+
+        flatten_blocks.append(&mut self.run_on_entry(
+            r#loop.get_region(0).get_entry_block(),
+            Rc::clone(&body_block),
+            Some(&body_block),
+            Some(&body_block),
+            Some(&exit_block),
+        ));
+
+        self.builder.pop_block();
+
+        // exit block push only
+        self.builder.push_block(&exit_block);
+        flatten_blocks.push(exit_block);
 
         flatten_blocks
     }
