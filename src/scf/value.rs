@@ -87,14 +87,11 @@ impl Type {
     pub fn deref(&self) -> Type {
         match self {
             Self::Ptr(inner) => *inner.clone(),
+            Self::Array(inner) => {
+                let (inner_type, _) = inner.as_ref();
+                inner_type.clone()
+            }
             _ => panic!("Type::deref: expect ptr type, but find {:?}", self),
-        }
-    }
-
-    pub fn try_deref(&self) -> Type {
-        match self {
-            Self::Ptr(inner) => *inner.clone(),
-            _ => self.clone(),
         }
     }
 
@@ -103,11 +100,24 @@ impl Type {
         match self {
             Self::Array(inner_ty) => {
                 let (inner_type, _) = inner_ty.as_ref();
-                Type::Ptr(Box::new(inner_type.downgrade()))
+                // println!("inner_type: {:?}", inner_type);
+                Type::Ptr(Box::new(inner_type.clone()))
             }
             Self::Bool | Self::Int8 | Self::Int32 | Self::Int64 | Self::Float32 | Self::Ptr(_) => {
                 self.clone()
             }
+            Self::Void => panic!(),
+        }
+    }
+
+    pub fn downgrade_outer(&self) -> Type {
+        match self {
+            Self::Array(inner_ty) => {
+                let (inner_type, _) = inner_ty.as_ref();
+                Type::Ptr(Box::new(inner_type.clone()))
+            }
+            Self::Ptr(_) => self.deref().downgrade_outer(),
+            Self::Bool | Self::Int8 | Self::Int32 | Self::Int64 | Self::Float32 => self.clone(),
             Self::Void => panic!(),
         }
     }

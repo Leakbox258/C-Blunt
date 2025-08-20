@@ -71,7 +71,8 @@ define_methods_trait! {
     mutable :           [
                             add_use(new_use : Shared<Operation>),
                             set_id(id : u64),
-                            set_parent(new_parent : Shared<Block>)
+                            set_parent(new_parent : Shared<Block>),
+                            set_type(new_type : Type)
     ],
     chaining_mutable :  [
                             add_operand(new_operand : Value),
@@ -85,10 +86,11 @@ define_methods_trait! {
                             // get_default_block() -> Ref<Shared<Block>>,
                             get_attr_as_ref(seq : usize) -> Attr,
                             get_attrs() -> [Attr;8],
-                            get_regions() -> Vec<Shared<Region>>
+                            get_regions() -> Vec<Shared<Region>>,
+                            get_operands() -> Vec<Value>
     ],
     borrow_mutable :        [
-
+                            get_operands_as_mut() -> Vec<Value>
     ]
 }
 

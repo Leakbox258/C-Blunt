@@ -305,22 +305,35 @@ impl Interpreter {
                 op_to_literal(&op.get_operand(0)),
                 op.get_type().to_string(), // dst type
             )),
-            OpType::Ptr2Int => Some(format!(
-                "%{} = ptrtoint {} {} to i64\n",
+            OpType::BitCast => Some(format!(
+                "%{} = bitcast {} {} to {}\n",
                 op.get_id(),
-                op.get_operand(0).get_type().downgrade().to_string(),
-                op_to_literal(&op.get_operand(0))
-            )),
-            OpType::Int2Ptr => Some(format!(
-                "%{} = inttoptr i64 {} to {}\n",
-                op.get_id(),
+                op.get_operand(0).get_type().to_string(),
                 op_to_literal(&op.get_operand(0)),
-                op.get_type().downgrade().to_string()
+                op.get_type().to_string()
+            )),
+
+            // only: base + offset
+            OpType::Gep => Some(format!(
+                "%{} = getelementptr inbounds {}, {}\n", // from 0
+                op.get_id(),
+                // op.get_operand(0).get_type().deref().to_string(),
+                op.get_operand(0).get_type().deref().to_string(),
+                // op_to_literal(&op.get_operand(0)),
+                op.get_operands()
+                    .iter()
+                    .map(|operand| format!(
+                        "{} {}",
+                        operand.get_type().to_string(),
+                        op_to_literal(operand)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )),
             OpType::FuncCall => {
                 if get_name!(op).unwrap() == "memset" {
                     return Some(format!(
-                        "call void @llvm.memset.p0i8.i32(ptr align 4 {}, i8 {}, i32 {}, i1 false)\n",
+                        "call void @llvm.memset.p0i8.i64(ptr align 16 {}, i8 {}, i32 {}, i1 true)\n",
                         op_to_literal(&op.get_operand(0)),
                         op_to_literal(&op.get_operand(1)),
                         op_to_literal(&op.get_operand(2))

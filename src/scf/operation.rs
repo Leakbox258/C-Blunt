@@ -175,6 +175,10 @@ impl Operation {
         self.ty.clone()
     }
 
+    pub fn set_type(&mut self, ty: Type) {
+        self.ty = ty;
+    }
+
     pub fn get_optype(&self) -> OpType {
         self.opty
     }
@@ -313,8 +317,8 @@ pub enum OpType {
     I2F,
     ZEXT,
     SEXT,
-    Ptr2Int,
-    Int2Ptr,
+    BitCast,
+    Gep,
     // misc
     FuncCall,
     Phi,
@@ -375,8 +379,8 @@ impl fmt::Display for OpType {
             Self::I2F => write!(f, "i2f"),
             Self::ZEXT => write!(f, "zext"),
             Self::SEXT => write!(f, "sext"),
-            Self::Ptr2Int => write!(f, "ptrtoint"),
-            Self::Int2Ptr => write!(f, "inttoptr"),
+            Self::Gep => write!(f, "Gep"),
+            Self::BitCast => write!(f, "BitCast"),
             Self::FuncCall => write!(f, "func_call"),
             Self::Phi => write!(f, "phi"),
             Self::GetI => write!(f, "int"),
